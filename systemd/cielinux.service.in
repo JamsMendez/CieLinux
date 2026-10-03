@@ -1,0 +1,24 @@
+# CieLinux user unit. install.sh replaces @BINDIR@ and installs this file as
+# $XDG_CONFIG_HOME/systemd/user/cielinux.service. Scene and mode come from
+# $XDG_CONFIG_HOME/cielinux/settings.conf (default: processing, scene-mini).
+[Unit]
+Description=CieLinux animated scene overlay
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=exec
+ExecStart=@BINDIR@/cielinux --resident
+# The host recovers renderer crashes itself (3 per rolling hour); a non-zero exit
+# is a real failure, retried at most 3 times a minute and then left stopped.
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+# Stop gracefully before the compositor goes away on logout or shutdown.
+TimeoutStopSec=10
+
+[Install]
+WantedBy=graphical-session.target

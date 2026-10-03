@@ -1,0 +1,12 @@
+# Build trees
+build/
+build-*/
+/cmake-build-*/
+
+# Editor and tooling
+.codegraph/
+.vscode/
+.idea/
+*.swp
+__pycache__/
+node_modules/
