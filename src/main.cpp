@@ -243,14 +243,17 @@ int main(int argc, char **argv) {
     AlertBridge alertBridge;
     QElapsedTimer alertClock;
     alertClock.start();
+    // H1: a held warning (duration 0) ends by itself alert-hold-max-seconds after it was requested.
     AlertDriver alertDriver([&alertClock] { return alertClock.elapsed(); }, [](const QString &line) {
         qInfo("CIELINUX_ALERT %s", qPrintable(line));
-    });
+    }, qint64(stored.settings.alertHoldMaxSeconds) * 1000);
     // A5: the sound for a newly shown alert (failed wins) plays once, unless muted or unset.
     QObject::connect(&alertDriver, &AlertDriver::alertShown, &alertDriver, [](const QString &kind) {
         qInfo("CIELINUX_ALERT shown kind=%s", qPrintable(kind));
     });
     QObject::connect(&alertDriver, &AlertDriver::alertShown, &alertSounds, &AlertSounds::onAlertShown);
+    // H4: a held warning repeats its sound every 5 s while it shows (same mute and sound checks).
+    QObject::connect(&alertDriver, &AlertDriver::alertRepeated, &alertSounds, &AlertSounds::onAlertRepeated);
     QObject::connect(&alertBridge, &AlertBridge::pageDone, &alertBridge, [](int generation) {
         qInfo("CIELINUX_ALERT page-done gen=%d", generation);
     });
@@ -339,8 +342,13 @@ int main(int argc, char **argv) {
                     // A4: queue it, then show it on the next event-loop turn without waiting for
                     // the tick (CielWin HandleAlert posts UpdateAlerts to the UI thread).
                     const QString reply = alertDriver.accept(command);
-                    if (reply == QLatin1String(AlertHttpProtocol::okReply))
+                    if (AlertHttpProtocol::statusCodeFor(reply) == 202)
                         QTimer::singleShot(0, &alertDriver, [&] { updateAlerts(); });
+                    return reply;
+                }, [&](quint64 id) {
+                    // H1: POST /v1/alerts/clear; the hide (or a resumed held warning) follows the same way.
+                    const QString reply = alertDriver.clear(id);
+                    QTimer::singleShot(0, &alertDriver, [&] { updateAlerts(); });
                     return reply;
                 });
             if (!httpServer->start()) httpServer.reset();

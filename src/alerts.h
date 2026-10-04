@@ -28,8 +28,10 @@ struct AlertGroup {
 
 struct AlertCommand {
     QList<AlertGroup> groups;
-    qint64 durationMs = 5000;
+    qint64 durationMs = 5000; // 0: held until cleared (or the queue's hold max), warning only
     int totalTiles() const;
+    bool held() const { return durationMs == 0; }
+    bool hasFailed() const;
 };
 
 struct AlertParseResult {
@@ -41,6 +43,7 @@ struct AlertParseResult {
 // `warning:2 failed:1 duration:5`: whitespace-separated `kind:count` tokens, kind warning|failed
 // (case-insensitive), count 1..16, each key at most once, optional `duration:seconds` 1..60
 // (default 5), at least one kind, at most 16 tiles in all, at most 256 characters. Never throws.
+// `duration:0` holds the alert until cleared and is accepted only without any failed group.
 namespace AlertCommandParser {
 AlertParseResult parse(const QString &input); // a null QString is "no command was given"
 }
@@ -51,6 +54,12 @@ struct AlertTranslation {
     QString error;   // the reason otherwise
 };
 
+struct AlertClearRequest {
+    bool ok = false;
+    quint64 id = 0; // 0: no id given, clear the held alert
+    QString error;  // the reason when not ok
+};
+
 namespace AlertHttpProtocol {
 inline constexpr char okReply[] = "ok";
 QString formatError(const QString &reason); // "error: <reason>"
@@ -58,7 +67,11 @@ QString formatError(const QString &reason); // "error: <reason>"
 // "warning:2 failed:1 duration:5" in the order written (repeats included, for the parser to
 // reject). Checks only the JSON shape: counts, ranges and "at least one" stay with the parser.
 AlertTranslation translate(const QString &body);
-// 202 ok, 503 alerts disabled, 500 internal error or anything unrecognised, 400 other errors.
+// `{}` or `{ "id": n }` (POST /v1/alerts/clear), n a whole number >= 1; nothing else.
+AlertClearRequest parseClear(const QString &body);
+// An accepted alert: "ok id=<n>", n >= 1 and increasing per run.
+QString formatAccepted(quint64 id);
+// 202 ok or ok id=<n>, 503 alerts disabled, 500 internal error or anything unrecognised, 400 other errors.
 int statusCodeFor(const QString &reply);
 }
 
@@ -103,29 +116,42 @@ QString resume(); // B2: uncovered again
 struct ActiveAlert {
     AlertCommand command;
     qint64 startedAtMs = 0;
-    quint64 serial = 0; // one per promoted command: a re-show of the same alert keeps it
+    quint64 serial = 0; // the request's id: a re-show or a resume of the same alert keeps it
+    qint64 requestedAtMs = 0;
+    qint64 endsAtMs = 0; // timed: start + duration; held: request + hold max
 };
 
 // The single slot: at most ONE alert exists, showing or waiting. A request while one is showing
-// (now < start + duration) or waiting (not yet older than the max age) is ignored and reported;
-// the HTTP reply is still "ok". A waiting alert older than the max age (strictly past it) is
-// dropped and reported. Starting needs a visible surface; a showing alert ends on time regardless.
+// (now < its end) or waiting (not yet older than the max age) is ignored and reported; the HTTP
+// reply is still "ok". A waiting alert older than the max age (strictly past it) is dropped and
+// reported. Starting needs a visible surface; a showing alert ends on time regardless.
+// Held alerts (duration 0, warning only) end at their request time + the hold max, wherever they
+// are; a held request during a timed alert waits for it. A request with a failed tile preempts a
+// held warning (showing or waiting): the warning is suspended and resumes, same id, for the rest
+// of its hold once nothing else shows or waits. So at most one more alert, a suspended held one.
 class AlertQueue {
 public:
     static constexpr qint64 defaultMaxAgeMs = 5 * 60 * 1000;
+    static constexpr qint64 defaultHoldMaxMs = 10 * 60 * 1000;
     using Diagnostic = std::function<void(const QString &)>;
-    // Throws std::invalid_argument for a negative max age.
-    explicit AlertQueue(qint64 maxAgeMs = defaultMaxAgeMs, Diagnostic onDiagnostic = {});
-    void enqueue(const AlertCommand &command, qint64 nowMs);
+    // Throws std::invalid_argument for a negative max age or hold max.
+    explicit AlertQueue(qint64 maxAgeMs = defaultMaxAgeMs, Diagnostic onDiagnostic = {},
+                        qint64 holdMaxMs = defaultHoldMaxMs);
+    // The request's id (>= 1, increasing) when it is shown or waits; 0 when it is ignored.
+    quint64 enqueue(const AlertCommand &command, qint64 nowMs);
+    // id 0: the held alert; otherwise that alert, held or timed. Showing, suspended or waiting;
+    // anything else is a no-op.
+    void clear(quint64 id, qint64 nowMs);
     std::optional<ActiveAlert> advance(qint64 nowMs, bool surfaceVisible);
 
 private:
     void dropExpired(qint64 nowMs);
-    qint64 maxAgeMs;
+    qint64 maxAgeMs, holdMaxMs;
     Diagnostic diagnostic;
-    std::optional<std::pair<AlertCommand, qint64>> pending; // single slot: (command, enqueuedAt)
+    std::optional<ActiveAlert> pending; // single slot, not started yet (startedAtMs unset)
     std::optional<ActiveAlert> current;
-    quint64 nextSerial = 1;
+    std::optional<ActiveAlert> suspended; // a held warning a failed alert took the place of
+    quint64 nextId = 1;
 };
 
 // Where an alert is drawn: the mini or the wallpaper page, both through AlertBridge.
@@ -145,23 +171,34 @@ class AlertDriver final : public QObject {
 public:
     using Clock = std::function<qint64()>; // monotonic milliseconds
     using Trace = std::function<void(const QString &)>;
-    AlertDriver(Clock clock, Trace trace, QObject *parent = nullptr);
-    // Parses and queues one command; returns the reply for the HTTP caller ("ok" or "error: ...").
+    // H4: how often a showing held warning repeats its sound (fixed, no setting).
+    static constexpr qint64 heldWarningRepeatMs = 5000;
+    AlertDriver(Clock clock, Trace trace, qint64 holdMaxMs = AlertQueue::defaultHoldMaxMs, QObject *parent = nullptr);
+    // Parses and queues one command; returns the reply for the HTTP caller: "ok id=<n>" when it
+    // shows or waits, "ok" when it is ignored (busy), "error: ..." when it does not parse.
     QString accept(const QString &text);
+    // POST /v1/alerts/clear (id 0: the held alert); always "ok", whether or not anything cleared.
+    QString clear(quint64 id);
     // The surface was replaced (mode switch): an alert still inside its duration is shown
     // again there for its remaining time by the next update().
-    void surfaceReplaced() { displayed.reset(); }
+    void surfaceReplaced() { displayed.reset(); repeatAt.reset(); }
     // `covered`: the wallpaper's output is under a fullscreen window (B2); always false in the mini.
     void update(const AlertSurface *surface, bool covered);
 signals:
-    // Once per newly shown alert (never on a re-show), "failed" when any failed tile, else
-    // "warning". The A5 seam: sounds play from here.
+    // Once per newly shown alert (never on a re-show or a resume), "failed" when any failed
+    // tile, else "warning". The A5 seam: sounds play from here.
     void alertShown(const QString &kind);
+    // H4: every heldWarningRepeatMs (at tick precision) while a held warning stays shown on a
+    // surface that can show it; never while suspended, waiting or covered, never for a timed
+    // alert. The cadence restarts from each show or resume, which itself repeats nothing.
+    void alertRepeated(const QString &kind);
 
 private:
     AlertShowRequest buildRequest(const AlertCommand &command, qint64 remainingMs, const AlertSurface &surface) const;
     Clock clock;
     Trace trace;
     AlertQueue queue;
-    std::optional<quint64> displayed, announced;
+    // Two announced ids: a held warning and the failed alert that preempted it are alive at once.
+    std::optional<quint64> displayed, announced, announcedBefore;
+    std::optional<qint64> repeatAt; // H4: the next repeat of the displayed held warning; unset = restart
 };

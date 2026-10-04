@@ -10,6 +10,7 @@ This page lists every change that made the two diverge. For each one it explains
 | NEB-1: nebula shader `highp` | **Yes, cheap insurance** | One line per scene. No effect on Windows today. It prevents the same bug on any GPU or driver that runs `mediump` as fp16. |
 | PERF-5: baked glows instead of per-frame `shadowBlur` | **Measure first** | Big win on Linux. On Windows the cost depends on how Skia rasterizes blur masks on D3D. Port it only if CielWin shows the same draw-rate ceiling. |
 | O1–O3 / B5: earlier mini and wallpaper optimizations | **Optional** | They were driven by QtWebEngine memory and CPU. Port them only if WebView2 shows the same profile. |
+| H1: held warning API (`duration: 0`, `ok id=<n>`, `/v1/alerts/clear`) | **Yes, for API parity** | Callers (the claude-cielinux plugin) use it to keep a warning up while a question waits. Until CielWin has it, they fall back to a timed warning on its `400`. |
 
 ## 1. NEB-1: nebula clouds missing (correctness)
 
@@ -80,6 +81,20 @@ These came before this session. They are documented in the CosmicLinux workspace
 - **B5:** applies those mini optimizations to the full wallpaper wherever the output is identical. Visual skips stay mini-only.
 
 They exist because QtWebEngine on Linux showed high renderer memory (about 0.8–1 GB) and high CPU in the 240x240 mini window. Port them to CielWin only if WebView2 shows the same profile.
+
+## 4. H1: held warning (HTTP alert API)
+
+**What changed.** CieLinux extends the alert API it shares with CielWin (see the README's *Held warning*):
+- `POST /v1/alerts` accepts `"duration": 0` with `warning` only (held until cleared); `duration: 0` with any `failed` answers `400 error: 'duration:0' requires warning only`.
+- An accepted alert answers `202 ok id=<n>` (`n` grows per run); an ignored (busy) request still answers plain `202 ok`.
+- New route `POST /v1/alerts/clear`, same checks, body at most 64 bytes: `{}` clears the held alert, `{"id": n}` clears that alert; always `202 ok`.
+- A failed request preempts a held warning, which resumes afterwards (same id, no second sound); a held request during a timed alert waits for it.
+- Safety max `alert-hold-max-seconds` (default 600), counted from the request, not from the start.
+- H4: while a held warning shows (not suspended, waiting or covered), its warning sound repeats every 5 s (`AlertDriver::heldWarningRepeatMs`, emitted as `alertRepeated` on the existing tick, restarting from each show or resume); timed alerts still play once. Port it to `AlertDriver.cs` with the H4 driver tests.
+
+**CielWin today.** None of this: `duration: 0` is a `400` (`must be 1..60 seconds`), `/v1/alerts/clear` is a `404`, and replies are exactly `ok`.
+
+**Recommendation: port it** to `AlertCommandParser.cs`, `AlertQueue.cs`, `AlertHttpProtocol.cs`, `LocalHttpCommandServer.cs` and `AlertDriver.cs`, mirroring `src/alerts.cpp` and `src/http-server.cpp` and their H1 contract tests. Check any CielWin caller that compares the reply body to exactly `ok`.
 
 ## Porting checklist (if you decide to port)
 

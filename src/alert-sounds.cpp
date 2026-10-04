@@ -262,6 +262,10 @@ void AlertSounds::onAlertShown(const QString &kind) {
     player.play(kind);
 }
 
+void AlertSounds::onAlertRepeated(const QString &kind) {
+    if (enabled()) player.play(kind);
+}
+
 TraySounds AlertSounds::trayControls() {
     return TraySounds{
         [this] { return enabled(); },

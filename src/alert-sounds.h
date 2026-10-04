@@ -100,6 +100,9 @@ public:
 public slots:
     // AlertDriver::alertShown: once per newly shown alert (failed wins); silent when muted/unset.
     void onAlertShown(const QString &kind);
+    // H4 AlertDriver::alertRepeated: plays like onAlertShown, but a muted repeat is not traced
+    // (one comes every 5 s while a held warning shows).
+    void onAlertRepeated(const QString &kind);
 private:
     QString soundFor(const QString &kind) const;
     void setSound(const QString &kind, const QString &fileName);

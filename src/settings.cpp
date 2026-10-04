@@ -66,6 +66,18 @@ QString readSound(const QString &value) {
     return value;
 }
 
+// alert-hold-max-seconds: plain decimal digits, 10-3600 (no sign, no unit).
+std::optional<int> readHoldSeconds(const QString &value) {
+    if (value.isEmpty() || value.size() > 4) return std::nullopt;
+    int seconds = 0;
+    for (const QChar c : value) {
+        if (c < QLatin1Char('0') || c > QLatin1Char('9')) return std::nullopt;
+        seconds = seconds * 10 + (c.unicode() - '0');
+    }
+    if (seconds < 10 || seconds > 3600) return std::nullopt;
+    return seconds;
+}
+
 QString flag(bool value) { return value ? QStringLiteral("on") : QStringLiteral("off"); }
 
 } // namespace
@@ -114,6 +126,8 @@ Settings Settings::parse(const QString &content) {
             result.failedSound = readSound(value);
         } else if (key == QLatin1String("warning-sound")) {
             result.warningSound = readSound(value);
+        } else if (key == QLatin1String("alert-hold-max-seconds")) {
+            if (auto v = readHoldSeconds(value)) result.alertHoldMaxSeconds = *v;
         }
     }
     result.httpServerEnabled = httpServer.value_or(legacyHttpServer.value_or(defaults.httpServerEnabled));
@@ -161,6 +175,10 @@ QString Settings::serialize() const {
         QStringLiteral("failed-sound = ") + failedSound,
         QStringLiteral("warning-sound = ") + warningSound,
         QString(),
+        QStringLiteral("# alert-hold-max-seconds: how long a held warning (`duration: 0`) may stay up without being"),
+        QStringLiteral("# cleared, counted from its request, 10-3600 (default 600). CieLinux only."),
+        QStringLiteral("alert-hold-max-seconds = ") + QString::number(alertHoldMaxSeconds),
+        QString(),
     };
     return lines.join(QLatin1Char('\n'));
 }
@@ -169,7 +187,7 @@ bool Settings::operator==(const Settings &o) const {
     return httpServerEnabled == o.httpServerEnabled && httpServerPort == o.httpServerPort &&
            wallpaperMode == o.wallpaperMode && scene == o.scene && miniPosition == o.miniPosition &&
            frameRate == o.frameRate && alertSoundsEnabled == o.alertSoundsEnabled && failedSound == o.failedSound &&
-           warningSound == o.warningSound;
+           warningSound == o.warningSound && alertHoldMaxSeconds == o.alertHoldMaxSeconds;
 }
 
 namespace SettingsFile {
