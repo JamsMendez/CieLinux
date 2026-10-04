@@ -1,5 +1,5 @@
 // B1 wallpaper mode (stage 2): the `scene` mode is the full-size page on the layer-shell
-// background layer of the selected output, switched live with `scene-mini` from the tray
+// bottom layer of the selected output, switched live with `scene-mini` from the tray
 // (exactly one mode at a time), persisted as `wallpaper-mode`. B2: alerts show in the wallpaper
 // too, held while a fullscreen window covers it, and the scene pauses meanwhile; the SUPER+Z
 // position cycle is ignored outside the mini.
@@ -19,8 +19,8 @@ const main = cpp.slice(cpp.indexOf('int main('));
 const prepare = main.slice(main.indexOf('auto prepareAttachment'), main.indexOf('policy.bindReconstruction'));
 const wallpaperBranch = prepare.slice(prepare.indexOf('if (wallpaper) {'), prepare.indexOf('} else {', prepare.indexOf('if (wallpaper) {')));
 
-test('wallpaper attachment: background layer, every edge, zone -1, opaque, full-size page, no mini parts', () => {
-    assert.match(wallpaperBranch, /layer->setLayer\(LayerShellQt::Window::LayerBackground\);/);
+test('wallpaper attachment: bottom layer, every edge, zone -1, opaque, full-size page, no mini parts', () => {
+    assert.match(wallpaperBranch, /layer->setLayer\(LayerShellQt::Window::LayerBottom\);/);
     for (const edge of ['AnchorTop', 'AnchorBottom', 'AnchorLeft', 'AnchorRight'])
         assert.ok(wallpaperBranch.includes(edge), edge);
     assert.match(wallpaperBranch, /layer->setMargins\(QMargins\(\)\);/);
