@@ -260,7 +260,8 @@ public:
 
 private:
     enum class State { Head, Body, Closing, Closed };
-    struct Route { const char *path; int cap; bool scene; };
+    enum class RouteKind { Scene, Alerts, AlertsClear };
+    struct Route { const char *path; int cap; RouteKind kind; };
 
     void onReadyRead() {
         if (state == State::Closed) return;
@@ -325,11 +326,12 @@ private:
             return reject(403, "unexpected host header");
         // 4. Path.
         static constexpr Route routes[] = {
-            {HttpProtocol::scenePath, HttpProtocol::sceneMaxBodyBytes, true},
-            {HttpProtocol::alertsPath, HttpProtocol::alertsMaxBodyBytes, false},
+            {HttpProtocol::scenePath, HttpProtocol::sceneMaxBodyBytes, RouteKind::Scene},
+            {HttpProtocol::alertsPath, HttpProtocol::alertsMaxBodyBytes, RouteKind::Alerts},
+            {HttpProtocol::alertsClearPath, HttpProtocol::alertsClearMaxBodyBytes, RouteKind::AlertsClear},
         };
         for (const Route &candidate : routes)
-            if (head.path == candidate.path && (candidate.scene || server->handleAlert)) route = &candidate;
+            if (head.path == candidate.path && routeServed(candidate.kind)) route = &candidate;
         if (!route) return reject(404, "no such route");
         // 5. Method: POST only. OPTIONS (a CORS preflight) too, never with Access-Control-*.
         if (head.method.toUpper() != "POST") return reject(405, "method not allowed", "Allow: POST\r\n");
@@ -365,8 +367,21 @@ private:
                                QStringDecoder::Flag::Stateless | QStringDecoder::Flag::ConvertInitialBom);
         const QString text = decoder.decode(body);
         if (decoder.hasError()) { reject(400, "body is not valid UTF-8"); return; }
-        if (route->scene) dispatchScene(text);
-        else dispatchAlert(text);
+        switch (route->kind) {
+        case RouteKind::Scene: dispatchScene(text); break;
+        case RouteKind::Alerts: dispatchAlert(text); break;
+        case RouteKind::AlertsClear: dispatchAlertClear(text); break;
+        }
+    }
+
+    // A route without its handler is answered exactly like an unknown path (CielWin).
+    bool routeServed(RouteKind kind) const {
+        switch (kind) {
+        case RouteKind::Scene: return true;
+        case RouteKind::Alerts: return bool(server->handleAlert);
+        case RouteKind::AlertsClear: return bool(server->clearAlert);
+        }
+        return false;
     }
 
     // 10/11 for the alerts route (CielWin LocalHttpCommandServer.HandleAlertBody).
@@ -380,6 +395,21 @@ private:
             answer = server->handleAlert(translated.command);
         } catch (...) {
             qWarning("CIELINUX_HTTP the alert command handler threw");
+            reply(500, "error: internal error");
+            return;
+        }
+        reply(AlertHttpProtocol::statusCodeFor(answer), answer.toUtf8());
+    }
+
+    // 10/11 for the alerts clear route: `{}` or `{ "id": n }`, then the handler (always "ok").
+    void dispatchAlertClear(const QString &text) {
+        const AlertClearRequest request = AlertHttpProtocol::parseClear(text);
+        if (!request.ok) { reject(400, request.error.toUtf8()); return; }
+        QString answer;
+        try {
+            answer = server->clearAlert(request.id);
+        } catch (...) {
+            qWarning("CIELINUX_HTTP the alert clear handler threw");
             reply(500, "error: internal error");
             return;
         }
@@ -452,9 +482,9 @@ private:
 };
 
 HttpServer::HttpServer(quint16 port, QByteArray token, SceneSwitch switchScene, AlertHandler handleAlert,
-                       QObject *parent)
+                       AlertClearHandler clearAlert, QObject *parent)
     : QObject(parent), requestedPort(port), token(std::move(token)), switchScene(std::move(switchScene)),
-      handleAlert(std::move(handleAlert)) {}
+      handleAlert(std::move(handleAlert)), clearAlert(std::move(clearAlert)) {}
 
 HttpServer::~HttpServer() {
     // Connections are children; they decrement the counter while being deleted.

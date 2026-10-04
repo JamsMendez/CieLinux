@@ -155,6 +155,26 @@ bool jsonInt32(const QByteArray &raw, int *value) {
     *value = int(number);
     return true;
 }
+
+// The checks both alert bodies share: exactly one JSON value, within .NET's depth, an object.
+// Empty when the body passes.
+QString objectShapeError(const QByteArray &utf8) {
+    // Wrapped in an array so any JSON value parses; exactly one element means exactly one value.
+    QJsonParseError error {};
+    const QJsonDocument document = QJsonDocument::fromJson("[" + utf8 + "]", &error);
+    if (error.error != QJsonParseError::NoError || !document.isArray() || document.array().size() != 1)
+        return invalidJson;
+    if (MemberScanner(utf8).maxDepth() > maxJsonDepth) return invalidJson;
+    if (!document.array().at(0).isObject()) return QStringLiteral("body must be a JSON object");
+    return {};
+}
+
+// A member name as .NET reads it; false for an escaped lone surrogate (invalid JSON to CielWin).
+bool memberName(const QByteArray &rawName, QString *name) {
+    if (hasLoneSurrogateEscape(rawName)) return false;
+    *name = QJsonDocument::fromJson("[" + rawName + "]").array().at(0).toString();
+    return true;
+}
 } // namespace
 
 QString alertKindName(AlertKind kind) {
@@ -165,6 +185,12 @@ int AlertCommand::totalTiles() const {
     int total = 0;
     for (const AlertGroup &group : groups) total += group.count;
     return total;
+}
+
+bool AlertCommand::hasFailed() const {
+    for (const AlertGroup &group : groups)
+        if (group.kind == AlertKind::Failed) return true;
+    return false;
 }
 
 namespace AlertCommandParser {
@@ -203,7 +229,8 @@ AlertParseResult parse(const QString &input) {
         if (!parsePlainInt(value, &number))
             return fail(QStringLiteral("'%1' does not carry a whole number").arg(token));
         if (isDuration) {
-            if (number < minDurationSeconds || number > maxDurationSeconds)
+            // 0 holds the alert until cleared (checked against the kinds below).
+            if (number != 0 && (number < minDurationSeconds || number > maxDurationSeconds))
                 return fail(QStringLiteral("'%1' must be %2..%3 seconds").arg(token).arg(minDurationSeconds).arg(maxDurationSeconds));
             durationSeconds = number;
             continue;
@@ -215,6 +242,8 @@ AlertParseResult parse(const QString &input) {
     if (command.groups.isEmpty()) return fail(QStringLiteral("at least one 'warning:N' or 'failed:N' group is required"));
     if (command.totalTiles() > maxTotalTiles)
         return fail(QStringLiteral("%1 tiles were requested, past the %2-tile limit").arg(command.totalTiles()).arg(maxTotalTiles));
+    // A failure has nothing to wait for: only a warning can be held.
+    if (durationSeconds == 0 && command.hasFailed()) return fail(QStringLiteral("'duration:0' requires warning only"));
     command.durationMs = qint64(durationSeconds) * 1000;
     result.command = command;
     return result;
@@ -228,22 +257,16 @@ AlertTranslation translate(const QString &body) {
     AlertTranslation result;
     auto fail = [&result](const QString &error) { result.error = error; return result; };
     const QByteArray utf8 = body.toUtf8();
-    // Wrapped in an array so any JSON value parses; exactly one element means exactly one value.
-    QJsonParseError error {};
-    const QJsonDocument document = QJsonDocument::fromJson("[" + utf8 + "]", &error);
-    if (error.error != QJsonParseError::NoError || !document.isArray() || document.array().size() != 1)
-        return fail(invalidJson);
+    if (const QString shape = objectShapeError(utf8); !shape.isEmpty()) return fail(shape);
     MemberScanner scanner(utf8);
-    if (scanner.maxDepth() > maxJsonDepth) return fail(invalidJson);
-    if (!document.array().at(0).isObject()) return fail(QStringLiteral("body must be a JSON object"));
     static const QStringList knownFields = {QStringLiteral("warning"), QStringLiteral("failed"), QStringLiteral("duration")};
     QStringList tokens;
     if (scanner.begin()) {
         do {
             QByteArray rawName, rawValue;
             scanner.member(&rawName, &rawValue);
-            if (hasLoneSurrogateEscape(rawName)) return fail(invalidJson);
-            const QString name = QJsonDocument::fromJson("[" + rawName + "]").array().at(0).toString();
+            QString name;
+            if (!memberName(rawName, &name)) return fail(invalidJson);
             if (!knownFields.contains(name)) return fail(QStringLiteral("unknown field '%1'").arg(name));
             int number = 0;
             if (!jsonInt32(rawValue, &number)) return fail(QStringLiteral("field '%1' must be a whole number").arg(name));
@@ -256,8 +279,47 @@ AlertTranslation translate(const QString &body) {
     return result;
 }
 
+AlertClearRequest parseClear(const QString &body) {
+    AlertClearRequest result;
+    auto fail = [&result](const QString &error) { result.error = error; return result; };
+    const QByteArray utf8 = body.toUtf8();
+    if (const QString shape = objectShapeError(utf8); !shape.isEmpty()) return fail(shape);
+    MemberScanner scanner(utf8);
+    bool seen = false;
+    if (scanner.begin()) {
+        do {
+            QByteArray rawName, rawValue;
+            scanner.member(&rawName, &rawValue);
+            QString name;
+            if (!memberName(rawName, &name)) return fail(invalidJson);
+            if (name != QLatin1String("id")) return fail(QStringLiteral("unknown field '%1'").arg(name));
+            if (seen) return fail(QStringLiteral("field 'id' is repeated"));
+            seen = true;
+            int number = 0;
+            if (!jsonInt32(rawValue, &number) || number < 1)
+                return fail(QStringLiteral("field 'id' must be a whole number >= 1"));
+            result.id = quint64(number);
+        } while (scanner.next());
+    }
+    result.ok = true;
+    return result;
+}
+
+QString formatAccepted(quint64 id) { return QStringLiteral("%1 id=%2").arg(QLatin1String(okReply)).arg(id); }
+
+namespace {
+// "ok id=<n>": n a positive decimal without a leading zero, nothing after it.
+bool isAccepted(const QString &reply) {
+    const QString prefix = QLatin1String(okReply) + QStringLiteral(" id=");
+    if (!reply.startsWith(prefix) || reply.size() == prefix.size() || reply.at(prefix.size()) == u'0') return false;
+    for (qsizetype i = prefix.size(); i < reply.size(); ++i)
+        if (reply.at(i) < u'0' || reply.at(i) > u'9') return false;
+    return true;
+}
+} // namespace
+
 int statusCodeFor(const QString &reply) {
-    if (reply == QLatin1String(okReply)) return 202;
+    if (reply == QLatin1String(okReply) || isAccepted(reply)) return 202;
     if (reply == formatError(QStringLiteral("alerts are disabled"))) return 503;
     if (reply == formatError(QStringLiteral("internal error"))) return 500;
     if (reply.startsWith(formatError(QString()))) return 400;
@@ -297,45 +359,82 @@ QString pause() { return QStringLiteral("{\"type\":\"pause\"}"); }
 QString resume() { return QStringLiteral("{\"type\":\"resume\"}"); }
 } // namespace AlertLayerMessages
 
-AlertQueue::AlertQueue(qint64 maxAgeMs, Diagnostic onDiagnostic)
-    : maxAgeMs(maxAgeMs), diagnostic(std::move(onDiagnostic)) {
+AlertQueue::AlertQueue(qint64 maxAgeMs, Diagnostic onDiagnostic, qint64 holdMaxMs)
+    : maxAgeMs(maxAgeMs), holdMaxMs(holdMaxMs), diagnostic(std::move(onDiagnostic)) {
     if (maxAgeMs < 0) throw std::invalid_argument("Max age must not be negative.");
+    if (holdMaxMs < 0) throw std::invalid_argument("Hold max must not be negative.");
     if (!diagnostic) diagnostic = [](const QString &) {};
 }
 
-void AlertQueue::enqueue(const AlertCommand &command, qint64 nowMs) {
+quint64 AlertQueue::enqueue(const AlertCommand &command, qint64 nowMs) {
     dropExpired(nowMs);
-    if (current && nowMs < current->startedAtMs + current->command.durationMs) {
+    const bool showing = current && nowMs < current->endsAtMs;
+    if (showing && current->command.held() && command.hasFailed()) {
+        // A failure is interesting exactly while a question waits: it takes the held warning's
+        // place, which resumes for the rest of its hold once the failed alert ends.
+        diagnostic(QStringLiteral("alert %1 suspended: a failed alert preempts it").arg(current->serial));
+        suspended = current;
+        current.reset();
+    } else if (showing && (current->command.held() || !command.held())) {
         diagnostic(QStringLiteral("alert ignored: one is already showing"));
-        return;
+        return 0;
+    } else if (pending) {
+        // A held warning still waiting to start gives way to a failed request the same way.
+        if (!pending->command.held() || !command.hasFailed()) {
+            diagnostic(QStringLiteral("alert ignored: one is already waiting to show"));
+            return 0;
+        }
+        suspended = pending;
+        pending.reset();
     }
-    if (pending) {
-        diagnostic(QStringLiteral("alert ignored: one is already waiting to show"));
-        return;
+    // A held alert's deadline runs from the request, so it never outlives a crashed caller.
+    pending = ActiveAlert{command, 0, nextId, nowMs, command.held() ? nowMs + holdMaxMs : 0};
+    return nextId++;
+}
+
+void AlertQueue::clear(quint64 id, qint64 nowMs) {
+    dropExpired(nowMs);
+    for (std::optional<ActiveAlert> *slot : {&current, &suspended, &pending}) {
+        if (!*slot || !(id ? (*slot)->serial == id : (*slot)->command.held())) continue;
+        diagnostic(QStringLiteral("alert %1 cleared").arg((*slot)->serial));
+        slot->reset();
     }
-    pending = std::make_pair(command, nowMs);
 }
 
 std::optional<ActiveAlert> AlertQueue::advance(qint64 nowMs, bool surfaceVisible) {
-    if (current && nowMs >= current->startedAtMs + current->command.durationMs) current.reset();
+    if (current && nowMs >= current->endsAtMs) current.reset();
     dropExpired(nowMs);
     if (current) return current;
-    if (!surfaceVisible || !pending) return std::nullopt;
-    current = ActiveAlert{pending->first, nowMs, nextSerial++};
-    pending.reset();
+    if (!surfaceVisible || !(pending || suspended)) return std::nullopt;
+    if (pending) {
+        current = std::exchange(pending, std::nullopt);
+        if (!current->command.held()) current->endsAtMs = nowMs + current->command.durationMs;
+    } else {
+        current = std::exchange(suspended, std::nullopt); // resumed: same id, same deadline
+    }
+    current->startedAtMs = nowMs;
     return current;
 }
 
 void AlertQueue::dropExpired(qint64 nowMs) {
-    if (pending && nowMs - pending->second > maxAgeMs) {
+    const QString heldPast = QStringLiteral("alert dropped: held past the %1 hold max").arg(timeSpanText(holdMaxMs));
+    if (pending && pending->command.held() && nowMs >= pending->endsAtMs) {
+        pending.reset();
+        diagnostic(heldPast);
+    }
+    if (pending && nowMs - pending->requestedAtMs > maxAgeMs) {
         pending.reset();
         diagnostic(QStringLiteral("alert dropped: waited longer than the %1 max age without starting").arg(timeSpanText(maxAgeMs)));
     }
+    if (suspended && nowMs >= suspended->endsAtMs) {
+        suspended.reset();
+        diagnostic(heldPast);
+    }
 }
 
-AlertDriver::AlertDriver(Clock clock, Trace trace, QObject *parent)
+AlertDriver::AlertDriver(Clock clock, Trace trace, qint64 holdMaxMs, QObject *parent)
     : QObject(parent), clock(std::move(clock)), trace(std::move(trace)),
-      queue(AlertQueue::defaultMaxAgeMs, [this](const QString &message) { this->trace(message); }) {}
+      queue(AlertQueue::defaultMaxAgeMs, [this](const QString &message) { this->trace(message); }, holdMaxMs) {}
 
 QString AlertDriver::accept(const QString &text) {
     const AlertParseResult parsed = AlertCommandParser::parse(text);
@@ -344,15 +443,35 @@ QString AlertDriver::accept(const QString &text) {
         trace(QStringLiteral("alert rejected: ") + error);
         return AlertHttpProtocol::formatError(error);
     }
-    queue.enqueue(*parsed.command, clock());
+    // An ignored (busy) request keeps today's plain "ok": it has no id to clear.
+    const quint64 id = queue.enqueue(*parsed.command, clock());
+    return id ? AlertHttpProtocol::formatAccepted(id) : QString::fromLatin1(AlertHttpProtocol::okReply);
+}
+
+QString AlertDriver::clear(quint64 id) {
+    queue.clear(id, clock());
     return QString::fromLatin1(AlertHttpProtocol::okReply);
 }
 
 void AlertDriver::update(const AlertSurface *surface, bool covered) {
     const bool visible = surface && surface->canShow && surface->canShow(covered);
-    const std::optional<ActiveAlert> active = queue.advance(clock(), visible);
+    const qint64 now = clock();
+    const std::optional<ActiveAlert> active = queue.advance(now, visible);
     const std::optional<quint64> serial = active ? std::optional<quint64>(active->serial) : std::nullopt;
-    if (!surface || serial == displayed) return;
+    if (!surface) return;
+    if (serial == displayed) {
+        // H4: reuses this tick's clock read. A covered or hidden surface stops the cadence, and
+        // showing again restarts it from that tick, with nothing played at once.
+        if (!active || !active->command.held()) return;
+        if (!visible) repeatAt.reset();
+        else if (!repeatAt) repeatAt = now + heldWarningRepeatMs;
+        else if (now >= *repeatAt) {
+            repeatAt = now + heldWarningRepeatMs;
+            emit alertRepeated(alertKindName(AlertKind::Warning));
+        }
+        return;
+    }
+    repeatAt.reset();
     if (displayed) {
         // Nothing stays marked displayed until a start below succeeds: a failed start is retried
         // next tick and a failed hide is never repeated.
@@ -360,8 +479,10 @@ void AlertDriver::update(const AlertSurface *surface, bool covered) {
         try { if (surface->hide) surface->hide(); } catch (...) { trace(QStringLiteral("alert hide-failed")); }
     }
     if (!active) return;
-    // The deadline started when the queue promoted the command, not when a page picked it up.
-    const qint64 remaining = active->command.durationMs - (clock() - active->startedAtMs);
+    // The deadline was set by the queue (promotion, or the request for a held alert), not when a
+    // page picked it up.
+    const qint64 shownAtMs = clock();
+    const qint64 remaining = active->endsAtMs - shownAtMs;
     if (remaining <= 0) return;
     try {
         surface->show(buildRequest(active->command, remaining, *surface));
@@ -370,8 +491,11 @@ void AlertDriver::update(const AlertSurface *surface, bool covered) {
         return;
     }
     displayed = active->serial;
-    if (announced == active->serial) return; // a re-show is never announced twice
-    announced = active->serial;
+    // H4: a held warning's first repeat comes heldWarningRepeatMs after this show or resume.
+    if (active->command.held()) repeatAt = shownAtMs + heldWarningRepeatMs;
+    // A re-show, or a held warning resuming after a failed alert, is never announced twice.
+    if (announced == active->serial || announcedBefore == active->serial) return;
+    announcedBefore = std::exchange(announced, active->serial);
     bool failed = false;
     for (const AlertGroup &group : active->command.groups) failed = failed || group.kind == AlertKind::Failed;
     emit alertShown(alertKindName(failed ? AlertKind::Failed : AlertKind::Warning));

@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { connect } from 'node:net';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { ROOT, SRC, source } from './paths.mjs';
 
 const read = name => readFileSync(source(name), 'utf8');
 let binary, fixture;
@@ -100,10 +100,21 @@ int main(int argc, char **argv) {
         std::cout << (t.ok ? "OK " + t.command.toStdString() : "ERR " + t.error.toStdString());
         return 0;
     }
+    if (command == "clear-body") {
+        // H1: POST /v1/alerts/clear body -> "OK <id>" (0 = no id) or "ERR <reason>".
+        QFile in; in.open(stdin, QIODevice::ReadOnly);
+        const AlertClearRequest c = AlertHttpProtocol::parseClear(QString::fromUtf8(in.readAll()));
+        std::cout << (c.ok ? "OK " + std::to_string(c.id) : "ERR " + c.error.toStdString());
+        return 0;
+    }
     if (command == "status") { std::cout << AlertHttpProtocol::statusCodeFor(args.value(1)); return 0; }
     if (command == "constants") {
         std::cout << HttpProtocol::alertsPath << ' ' << HttpProtocol::alertsMaxBodyBytes << ' ' << HttpProtocol::defaultPort
                   << ' ' << AlertTileLayout::gapPixels << ' ' << AlertTileLayout::maxTiles << ' ' << AlertQueue::defaultMaxAgeMs;
+        return 0;
+    }
+    if (command == "constants-hold") {
+        std::cout << HttpProtocol::alertsClearPath << ' ' << HttpProtocol::alertsClearMaxBodyBytes << ' ' << AlertQueue::defaultHoldMaxMs;
         return 0;
     }
     if (command == "layout") {
@@ -137,16 +148,30 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (command == "queue") {
-        // new [maxAgeMs] | enqueue <t> <command text> | advance <t> <visible 0|1>
+        // new [maxAgeMs] [holdMaxMs] | enqueue <t> <command text> | advance <t> <visible 0|1>
+        // H1: enq <t> <command text> (prints the id, 0 = ignored) | clear <t> <id> | state <t> <visible 0|1>
         std::unique_ptr<AlertQueue> queue;
         auto diag = [](const QString &m) { out("DIAG " + m); };
         for (const QString &line : stdinLines()) {
             const QStringList w = line.split(' ');
             if (w[0] == "new") {
-                try { queue = std::make_unique<AlertQueue>(w.size() > 1 ? w[1].toLongLong() : AlertQueue::defaultMaxAgeMs, diag); out("NEW"); }
+                try {
+                    queue = std::make_unique<AlertQueue>(w.size() > 1 ? w[1].toLongLong() : AlertQueue::defaultMaxAgeMs, diag,
+                                                         w.size() > 2 ? w[2].toLongLong() : AlertQueue::defaultHoldMaxMs);
+                    out("NEW");
+                }
                 catch (const std::invalid_argument &) { out("THROWS"); }
             } else if (w[0] == "enqueue") {
                 queue->enqueue(*AlertCommandParser::parse(w.mid(2).join(' ')).command, w[1].toLongLong());
+            } else if (w[0] == "enq") {
+                out(QStringLiteral("ID %1").arg(queue->enqueue(*AlertCommandParser::parse(w.mid(2).join(' ')).command, w[1].toLongLong())));
+            } else if (w[0] == "clear") {
+                queue->clear(w[2].toULongLong(), w[1].toLongLong());
+            } else if (w[0] == "state") {
+                const std::optional<ActiveAlert> a = queue->advance(w[1].toLongLong(), w[2] == "1");
+                out(a ? QStringLiteral("ACTIVE %1 %2 started=%3 ends=%4 id=%5").arg(kinds(a->command)).arg(a->command.durationMs)
+                            .arg(a->startedAtMs).arg(a->endsAtMs).arg(a->serial)
+                      : QStringLiteral("NONE"));
             } else if (w[0] == "advance") {
                 const std::optional<ActiveAlert> a = queue->advance(w[1].toLongLong(), w[2] == "1");
                 out(a ? QStringLiteral("ACTIVE %1 %2 started=%3").arg(kinds(a->command)).arg(a->command.durationMs).arg(a->startedAtMs)
@@ -158,10 +183,13 @@ int main(int argc, char **argv) {
     if (command == "driver") {
         // clock <t> | step <ms per read> | accept <text> | canshow 0|1 | showfail <n> | update | update-none | replace
         // B2: wallpaper (canShow honours covered) | covered 0|1 | workarea <l> <t> <w> <h> | workarea-throw
+        // H1: argument 1 is the hold max in ms (default AlertQueue::defaultHoldMaxMs) | clear <id>
         qint64 now = 1000000, step = 0;
         bool canShow = true, honourCovered = false, covered = false; int showFailures = 0;
-        AlertDriver driver([&] { const qint64 t = now; now += step; return t; }, [](const QString &m) { out("TRACE " + m); });
+        AlertDriver driver([&] { const qint64 t = now; now += step; return t; }, [](const QString &m) { out("TRACE " + m); },
+                           args.size() > 1 ? args[1].toLongLong() : AlertQueue::defaultHoldMaxMs);
         QObject::connect(&driver, &AlertDriver::alertShown, [](const QString &kind) { out("SHOWN " + kind); });
+        QObject::connect(&driver, &AlertDriver::alertRepeated, [](const QString &kind) { out("REPEAT " + kind); }); // H4
         AlertSurface surface{[&](bool isCovered) { return canShow && !(honourCovered && isCovered); },
             [&](const AlertShowRequest &request) {
                 if (showFailures > 0) { --showFailures; throw std::runtime_error("show failed"); }
@@ -173,6 +201,7 @@ int main(int argc, char **argv) {
             if (w[0] == "clock") now = w[1].toLongLong();
             else if (w[0] == "step") step = w[1].toLongLong();
             else if (w[0] == "accept") out("REPLY " + driver.accept(w.mid(1).join(' ')));
+            else if (w[0] == "clear") out("REPLY " + driver.clear(w[1].toULongLong()));
             else if (w[0] == "canshow") canShow = w[1] == "1";
             else if (w[0] == "showfail") showFailures = w[1].toInt();
             else if (w[0] == "wallpaper") honourCovered = true;
@@ -216,6 +245,10 @@ int main(int argc, char **argv) {
             [] { out("HIDE"); }};
         HttpServer server(0, token, [](const QString &) { return true; }, [&](const QString &text) {
             const QString reply = driver.accept(text);
+            driver.update(&surface, false);
+            return reply;
+        }, [&](quint64 id) {
+            const QString reply = driver.clear(id);
             driver.update(&surface, false);
             return reply;
         });
@@ -268,7 +301,9 @@ test('parser: every CielWin rejection, with its exact message', () => {
         ['warning:99999999999', "ERR 'warning:99999999999' does not carry a whole number"],
         ['warning:0', "ERR 'warning:0' must be 1..16"],
         ['warning:17', "ERR 'warning:17' must be 1..16"],
-        ['warning:1 duration:0', "ERR 'duration:0' must be 1..60 seconds"],
+        ['failed:1 duration:0', "ERR 'duration:0' requires warning only"],
+        ['warning:1 failed:1 duration:0', "ERR 'duration:0' requires warning only"],
+        ['duration:0', "ERR at least one 'warning:N' or 'failed:N' group is required"],
         ['warning:1 duration:61', "ERR 'duration:61' must be 1..60 seconds"],
     ];
     for (const [input, expected] of cases) assert.equal(parse(input), expected, input);
@@ -280,6 +315,13 @@ test('parser: 256 characters is the input limit', () => {
     assert.equal(parse(atLimit), 'OK warning:1 5000');
     const tooLong = `warning:1 ${' '.repeat(260)}`;
     assert.equal(parse(tooLong), `ERR command is ${tooLong.length} characters long, past the 256-character limit`);
+});
+
+test('parser: H1 duration:0 holds a warning-only command until cleared', () => {
+    assert.equal(parse('warning:1 duration:0'), 'OK warning:1 0');
+    assert.equal(parse('WARNING:3 Duration:0'), 'OK warning:3 0');
+    assert.equal(parse('duration:0 warning:16'), 'OK warning:16 0');
+    assert.equal(parse('warning:1 duration:00'), 'OK warning:1 0');
 });
 
 // ---- AlertHttpProtocolTests ----
@@ -324,6 +366,29 @@ test('http status: 202 ok, 503 alerts disabled, 500 internal or unknown, 400 any
         ["error: 'warning:0' must be 1..16", '400'], ['error: internal error', '500'], ['something unexpected', '500']])
         assert.equal(run(['status', reply]), status, reply);
     assert.equal(run(['constants']), '/v1/alerts 1024 43811 8 8 300000');
+});
+
+test('http status: H1 an accepted alert answers ok id=<n> with 202; anything else after ok is unrecognised', () => {
+    for (const [reply, status] of [['ok id=1', '202'], ['ok id=42', '202'], ['ok id=', '500'], ['ok id=0', '500'],
+        ['ok id=x', '500'], ['ok id=1 ', '500'], ['ok  id=1', '500'], ['okid=1', '500']])
+        assert.equal(run(['status', reply]), status, reply);
+    assert.equal(translate('{"warning":1,"duration":0}'), 'OK warning:1 duration:0');
+    assert.equal(run(['constants-hold']), '/v1/alerts/clear 64 600000');
+});
+
+test('clear body: H1 {} or {"id": n} with n a whole number >= 1, nothing else', () => {
+    const clearBody = body => run(['clear-body'], body);
+    for (const [body, expected] of [['{}', 'OK 0'], ['  { }  ', 'OK 0'], ['{"id":1}', 'OK 1'], ['{ "id" : 12 }', 'OK 12'],
+        ['{"id":2147483647}', 'OK 2147483647']])
+        assert.equal(clearBody(body), expected, body);
+    for (const [body, expected] of [['', 'body is not valid JSON'], ['{', 'body is not valid JSON'],
+        ['{"\\uD800":1}', 'body is not valid JSON'], ['[1]', 'body must be a JSON object'], ['null', 'body must be a JSON object'],
+        ['{"warning":1}', "unknown field 'warning'"], ['{"Id":1}', "unknown field 'Id'"],
+        ['{"id":0}', "field 'id' must be a whole number >= 1"], ['{"id":-1}', "field 'id' must be a whole number >= 1"],
+        ['{"id":1.5}', "field 'id' must be a whole number >= 1"], ['{"id":"1"}', "field 'id' must be a whole number >= 1"],
+        ['{"id":null}', "field 'id' must be a whole number >= 1"], ['{"id":2147483648}', "field 'id' must be a whole number >= 1"],
+        ['{"id":1,"id":2}', "field 'id' is repeated"]])
+        assert.equal(clearBody(body), `ERR ${expected}`, body);
 });
 
 // ---- AlertTileLayoutTests ----
@@ -390,6 +455,84 @@ test('queue: covered holds the start, never extends a showing alert, waits at mo
     assert.deepEqual(queue(['new 0', 'enqueue 0 warning:1', 'advance 0 1']), ['NEW', 'ACTIVE warning:1 5000 started=0']);
 });
 
+test('queue: H1 ids increase per accepted request; an ignored request gets 0 and uses no id', () => {
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:1', 'enq 0 failed:1', 'state 0 1', 'enq 500 failed:1', 'enq 1000 failed:2', 'state 1000 1']),
+        ['NEW', 'ID 1', 'DIAG alert ignored: one is already waiting to show', 'ID 0', 'ACTIVE warning:1 1000 started=0 ends=1000 id=1',
+            'DIAG alert ignored: one is already showing', 'ID 0', 'ID 2', 'ACTIVE failed:2 5000 started=1000 ends=6000 id=2']);
+});
+
+test('queue: H1 a held warning lasts until the hold max, counted from the request, not from the start', () => {
+    assert.deepEqual(queue(['new 300000 60000', 'enq 0 warning:1 duration:0', 'state 0 1', 'state 59999 1', 'state 60000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=60000 id=1', 'ACTIVE warning:1 0 started=0 ends=60000 id=1', 'NONE']);
+    // Held back (covered) for 20 s: it still ends 60 s after the request.
+    assert.deepEqual(queue(['new 300000 60000', 'enq 0 warning:1 duration:0', 'state 0 0', 'state 20000 1', 'state 60000 1']),
+        ['NEW', 'ID 1', 'NONE', 'ACTIVE warning:1 0 started=20000 ends=60000 id=1', 'NONE']);
+    // Waiting past its hold max: dropped then, before the 5-minute start limit.
+    assert.deepEqual(queue(['new 300000 60000', 'enq 0 warning:1 duration:0', 'state 59999 0', 'state 60000 0', 'state 60001 1']),
+        ['NEW', 'ID 1', 'NONE', 'DIAG alert dropped: held past the 00:01:00 hold max', 'NONE', 'NONE']);
+    // Default hold max (10 minutes) is longer than the start limit: the 5-minute rule drops it first.
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 300001 1']),
+        ['NEW', 'ID 1', 'DIAG alert dropped: waited longer than the 00:05:00 max age without starting', 'NONE']);
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 300000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=300000 ends=600000 id=1']);
+    assert.deepEqual(queue(['new 0 -1']), ['THROWS']);
+});
+
+test('queue: H1 a failed request preempts a held warning, which resumes for the rest of its hold', () => {
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'enq 1000 failed:1 duration:2', 'state 1000 1',
+        'state 2999 1', 'state 3000 1', 'state 600000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 2',
+            'ACTIVE failed:1 2000 started=1000 ends=3000 id=2', 'ACTIVE failed:1 2000 started=1000 ends=3000 id=2',
+            'ACTIVE warning:1 0 started=3000 ends=600000 id=1', 'NONE']);
+    // A mixed request preempts too (it has a failed tile); a warning-only one is ignored as today.
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'enq 10 warning:2', 'enq 20 warning:1 duration:0',
+        'enq 30 warning:1 failed:1', 'state 30 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert ignored: one is already showing', 'ID 0',
+            'DIAG alert ignored: one is already showing', 'ID 0', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 2',
+            'ACTIVE warning:1,failed:1 5000 started=30 ends=5030 id=2']);
+    // The suspended warning expires on its own deadline while the failed alert shows.
+    assert.deepEqual(queue(['new 300000 4000', 'enq 0 warning:1 duration:0', 'state 0 1', 'enq 1000 failed:1', 'state 1000 1',
+        'state 4000 1', 'state 6000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=4000 id=1', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 2',
+            'ACTIVE failed:1 5000 started=1000 ends=6000 id=2', 'DIAG alert dropped: held past the 00:00:04 hold max',
+            'ACTIVE failed:1 5000 started=1000 ends=6000 id=2', 'NONE']);
+    // A held warning still waiting (covered) gives way to a failed request, then follows it.
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 0', 'enq 1000 failed:1', 'state 2000 1', 'state 7000 1']),
+        ['NEW', 'ID 1', 'NONE', 'ID 2', 'ACTIVE failed:1 5000 started=2000 ends=7000 id=2',
+            'ACTIVE warning:1 0 started=7000 ends=600000 id=1']);
+});
+
+test('queue: H1 a held request during a timed alert waits for it; a timed one during a timed alert is still ignored', () => {
+    assert.deepEqual(queue(['new', 'enq 0 failed:1 duration:2', 'state 0 1', 'enq 1000 warning:1 duration:0', 'enq 1500 warning:1 duration:0',
+        'state 1000 1', 'state 2000 1']),
+        ['NEW', 'ID 1', 'ACTIVE failed:1 2000 started=0 ends=2000 id=1', 'ID 2', 'DIAG alert ignored: one is already waiting to show', 'ID 0',
+            'ACTIVE failed:1 2000 started=0 ends=2000 id=1', 'ACTIVE warning:1 0 started=2000 ends=601000 id=2']);
+});
+
+test('queue: H1 clear - {} clears the held alert wherever it is, an id clears that alert, timed ones only by id', () => {
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'clear 10 0', 'state 10 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert 1 cleared', 'NONE']);
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'clear 10 2', 'clear 10 1', 'state 10 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert 1 cleared', 'NONE']);
+    // {} never clears a timed alert; its id does.
+    assert.deepEqual(queue(['new', 'enq 0 failed:1', 'state 0 1', 'clear 10 0', 'state 10 1', 'clear 20 1', 'state 20 1']),
+        ['NEW', 'ID 1', 'ACTIVE failed:1 5000 started=0 ends=5000 id=1', 'ACTIVE failed:1 5000 started=0 ends=5000 id=1',
+            'DIAG alert 1 cleared', 'NONE']);
+    // A suspended held warning cleared meanwhile does not come back after the failed alert.
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'enq 1000 failed:1', 'state 1000 1', 'clear 2000 0',
+        'state 2000 1', 'state 6000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 2',
+            'ACTIVE failed:1 5000 started=1000 ends=6000 id=2', 'DIAG alert 1 cleared', 'ACTIVE failed:1 5000 started=1000 ends=6000 id=2', 'NONE']);
+    // Clearing the preempting failed alert by id resumes the held warning at once.
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'enq 1000 failed:1', 'state 1000 1', 'clear 2000 2',
+        'state 2000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 2',
+            'ACTIVE failed:1 5000 started=1000 ends=6000 id=2', 'DIAG alert 2 cleared', 'ACTIVE warning:1 0 started=2000 ends=600000 id=1']);
+    // A waiting held warning is cleared too; an unknown id or nothing held is a silent no-op.
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 0', 'clear 10 0', 'state 20 1', 'clear 30 0', 'clear 30 9']),
+        ['NEW', 'ID 1', 'NONE', 'DIAG alert 1 cleared', 'NONE']);
+});
+
 // ---- AlertDriver (AlertDriverSoundTests: the "shown" seam A5 plays sounds from) ----
 
 const driver = script => run(['driver'], script.join('\n')).trim().split('\n');
@@ -399,31 +542,31 @@ const showJson = (tiles, columns, rows, duration) =>
 
 test('driver: accept replies ok or the parser error; a new alert shows once and is announced once', () => {
     assert.deepEqual(driver(['accept warning:1 duration:10', 'update', 'update']),
-        ['REPLY ok', showJson(['warning'], 1, 1, 10000), 'SHOWN warning']);
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 10000), 'SHOWN warning']);
     assert.deepEqual(driver(['accept warning:0']), ["TRACE alert rejected: 'warning:0' must be 1..16", "REPLY error: 'warning:0' must be 1..16"]);
-    assert.deepEqual(driver(['accept failed:2']).slice(0, 1), ['REPLY ok']);
+    assert.deepEqual(driver(['accept failed:2']).slice(0, 1), ['REPLY ok id=1']);
     assert.deepEqual(driver(['accept warning:3 failed:1', 'update']),
-        ['REPLY ok', showJson(['failed', 'warning', 'warning', 'warning'], 2, 2, 5000), 'SHOWN failed']);
+        ['REPLY ok id=1', showJson(['failed', 'warning', 'warning', 'warning'], 2, 2, 5000), 'SHOWN failed']);
 });
 
 test('driver: busy-ignore still replies ok; ends with a hide; a later alert is announced again', () => {
     assert.deepEqual(driver(['accept warning:1 duration:1', 'update', 'accept failed:1', 'clock 1001000', 'update',
         'accept failed:1', 'update']),
-        ['REPLY ok', showJson(['warning'], 1, 1, 1000), 'SHOWN warning',
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 1000), 'SHOWN warning',
             'TRACE alert ignored: one is already showing', 'REPLY ok', 'HIDE',
-            'REPLY ok', showJson(['failed'], 1, 1, 5000), 'SHOWN failed']);
+            'REPLY ok id=2', showJson(['failed'], 1, 1, 5000), 'SHOWN failed']);
 });
 
 test('driver: held while the surface cannot show; a failed show is retried; re-show after replace is silent', () => {
     assert.deepEqual(driver(['canshow 0', 'accept warning:1', 'update', 'canshow 1', 'update']),
-        ['REPLY ok', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
     assert.deepEqual(driver(['showfail 1', 'accept warning:1', 'update', 'update']),
-        ['REPLY ok', 'TRACE alert start-failed', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
+        ['REPLY ok id=1', 'TRACE alert start-failed', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
     // Re-shown on a replaced surface for its remaining time, never announced twice.
     assert.deepEqual(driver(['accept warning:1 duration:10', 'update', 'clock 1004000', 'replace', 'update']),
-        ['REPLY ok', showJson(['warning'], 1, 1, 10000), 'SHOWN warning', showJson(['warning'], 1, 1, 6000)]);
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 10000), 'SHOWN warning', showJson(['warning'], 1, 1, 6000)]);
     // Every clock read moves one second: promoted on one read, no time left on the next.
-    assert.deepEqual(driver(['step 1000', 'accept warning:1 duration:1', 'update']), ['REPLY ok']);
+    assert.deepEqual(driver(['step 1000', 'accept warning:1 duration:1', 'update']), ['REPLY ok id=1']);
 });
 
 test('driver: B1 mode switch - no surface in the wallpaper holds alerts; back in the mini the rest is re-shown silently', () => {
@@ -431,35 +574,92 @@ test('driver: B1 mode switch - no surface in the wallpaper holds alerts; back in
     // and a new alert is busy-ignored; back in the mini the same alert returns for its remaining time.
     assert.deepEqual(driver(['accept warning:1 duration:10', 'update', 'replace', 'update-none', 'accept failed:1',
         'clock 1004000', 'update-none', 'replace', 'update']),
-        ['REPLY ok', showJson(['warning'], 1, 1, 10000), 'SHOWN warning',
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 10000), 'SHOWN warning',
             'TRACE alert ignored: one is already showing', 'REPLY ok', showJson(['warning'], 1, 1, 6000)]);
     // Accepted while in the wallpaper: held (never promoted) until a surface can show it.
     assert.deepEqual(driver(['accept failed:1', 'update-none', 'clock 1060000', 'update-none', 'update']),
-        ['REPLY ok', showJson(['failed'], 1, 1, 5000), 'SHOWN failed']);
+        ['REPLY ok id=1', showJson(['failed'], 1, 1, 5000), 'SHOWN failed']);
 });
 
 test('driver: B2 wallpaper - held while covered, shown (and announced, so the sound plays) only once uncovered', () => {
     // Accepted under a fullscreen window: nothing is shown or announced until uncovered.
     assert.deepEqual(driver(['wallpaper', 'covered 1', 'accept failed:1 warning:2', 'update', 'clock 1060000', 'update',
         'covered 0', 'update', 'update']),
-        ['REPLY ok', showJson(['failed', 'warning', 'warning'], 2, 2, 5000), 'SHOWN failed']);
+        ['REPLY ok id=1', showJson(['failed', 'warning', 'warning'], 2, 2, 5000), 'SHOWN failed']);
     // Still covered past the 5-minute max age: dropped, never shown, never announced.
     assert.deepEqual(driver(['wallpaper', 'covered 1', 'accept warning:1', 'update', 'clock 1300001', 'update', 'covered 0', 'update']),
-        ['REPLY ok', 'TRACE alert dropped: waited longer than the 00:05:00 max age without starting']);
+        ['REPLY ok id=1', 'TRACE alert dropped: waited longer than the 00:05:00 max age without starting']);
     // Covered while showing: the alert keeps its host-side timing (no hide, no re-show) and ends on time.
     assert.deepEqual(driver(['wallpaper', 'accept warning:1 duration:10', 'update', 'covered 1', 'clock 1004000', 'update',
         'covered 0', 'update', 'clock 1010000', 'update']),
-        ['REPLY ok', showJson(['warning'], 1, 1, 10000), 'SHOWN warning', 'HIDE']);
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 10000), 'SHOWN warning', 'HIDE']);
     // The mini surface ignores `covered` (it is never held for coverage).
-    assert.deepEqual(driver(['covered 1', 'accept warning:1', 'update']), ['REPLY ok', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
+    assert.deepEqual(driver(['covered 1', 'accept warning:1', 'update']), ['REPLY ok id=1', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
 });
 
 test('driver: B2 the work area is read from the surface at show time; a failed read lays out on the whole canvas', () => {
     assert.deepEqual(driver(['workarea 0 0 1883 1080', 'accept warning:2', 'update']),
-        ['REPLY ok', 'SHOW {"type":"show","tiles":["warning","warning"],"columns":2,"rows":1,"gap":8,'
+        ['REPLY ok id=1', 'SHOW {"type":"show","tiles":["warning","warning"],"columns":2,"rows":1,"gap":8,'
             + '"workArea":{"left":0,"top":0,"width":1883,"height":1080},"duration":5000}', 'SHOWN warning']);
     assert.deepEqual(driver(['workarea-throw', 'accept warning:1', 'update']),
-        ['REPLY ok', 'TRACE alert workarea-failed', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
+        ['REPLY ok id=1', 'TRACE alert workarea-failed', showJson(['warning'], 1, 1, 5000), 'SHOWN warning']);
+});
+
+test('driver: H1 a held warning is shown for the remaining hold, announced once, ended by clear or the hold max', () => {
+    assert.deepEqual(driver(['accept warning:1 duration:0', 'update', 'clock 1004000', 'update', 'clear 0', 'update', 'clear 0']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning', 'TRACE alert 1 cleared', 'REPLY ok', 'HIDE', 'REPLY ok']);
+    assert.deepEqual(run(['driver', '60000'], ['accept warning:1 duration:0', 'update', 'clock 1059999', 'update', 'clock 1060000', 'update']
+        .join('\n')).trim().split('\n'), ['REPLY ok id=1', showJson(['warning'], 1, 1, 60000), 'SHOWN warning', 'REPEAT warning', 'HIDE']);
+    assert.deepEqual(driver(['accept failed:1 duration:0']),
+        ["TRACE alert rejected: 'duration:0' requires warning only", "REPLY error: 'duration:0' requires warning only"]);
+});
+
+test('driver: H1 a failed alert preempts a held warning; the warning resumes afterwards without replaying its sound', () => {
+    assert.deepEqual(driver(['accept warning:1 duration:0', 'update', 'clock 1001000', 'accept failed:1 duration:2', 'update',
+        'clock 1003000', 'update', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning',
+            'TRACE alert 1 suspended: a failed alert preempts it', 'REPLY ok id=2', 'HIDE', showJson(['failed'], 1, 1, 2000), 'SHOWN failed',
+            'HIDE', showJson(['warning'], 1, 1, 597000)]);
+    // Never shown before the failed alert took its place: announced when it finally shows.
+    assert.deepEqual(driver(['canshow 0', 'accept warning:1 duration:0', 'update', 'accept failed:1', 'canshow 1', 'update',
+        'clock 1005000', 'update']),
+        ['REPLY ok id=1', 'REPLY ok id=2', showJson(['failed'], 1, 1, 5000), 'SHOWN failed',
+            'HIDE', showJson(['warning'], 1, 1, 595000), 'SHOWN warning']);
+});
+
+test('driver: H4 a showing held warning repeats its sound every 5 s until cleared or its hold max; a timed one never', () => {
+    assert.deepEqual(driver(['accept warning:1 duration:0', 'update', 'clock 1004999', 'update', 'clock 1005000', 'update',
+        'clock 1009000', 'update', 'clock 1010000', 'update', 'clear 0', 'update', 'clock 1020000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning', 'REPEAT warning', 'REPEAT warning',
+            'TRACE alert 1 cleared', 'REPLY ok', 'HIDE']);
+    // The hold max ends it: hidden, nothing more.
+    assert.deepEqual(run(['driver', '60000'], ['accept warning:1 duration:0', 'update', 'clock 1058000', 'update',
+        'clock 1060000', 'update', 'clock 1070000', 'update'].join('\n')).trim().split('\n'),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 60000), 'SHOWN warning', 'REPEAT warning', 'HIDE']);
+    // A timed alert plays its sound once only.
+    assert.deepEqual(driver(['accept warning:1 duration:20', 'update', 'clock 1005000', 'update', 'clock 1010000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 20000), 'SHOWN warning']);
+    // No extra clock read: shown on the second read of the first update, repeated on the sixth update.
+    assert.deepEqual(driver(['step 1000', 'accept warning:1 duration:0', 'update', 'update', 'update', 'update', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 598000), 'SHOWN warning']);
+    assert.deepEqual(driver(['step 1000', 'accept warning:1 duration:0', 'update', 'update', 'update', 'update', 'update', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 598000), 'SHOWN warning', 'REPEAT warning']);
+});
+
+test('driver: H4 no repeat while suspended by a failed alert or covered; the 5 s cadence restarts when it shows again', () => {
+    assert.deepEqual(driver(['accept warning:1 duration:0', 'update', 'clock 1001000', 'accept failed:1 duration:10', 'update',
+        'clock 1005000', 'update', 'clock 1011000', 'update', 'clock 1015999', 'update', 'clock 1016000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning',
+            'TRACE alert 1 suspended: a failed alert preempts it', 'REPLY ok id=2', 'HIDE', showJson(['failed'], 1, 1, 10000), 'SHOWN failed',
+            'HIDE', showJson(['warning'], 1, 1, 589000), 'REPEAT warning']);
+    // Covered while showing (wallpaper under a fullscreen window): silent; restarts from the uncover.
+    assert.deepEqual(driver(['wallpaper', 'accept warning:1 duration:0', 'update', 'covered 1', 'clock 1005000', 'update',
+        'clock 1010000', 'update', 'covered 0', 'clock 1012000', 'update', 'clock 1016999', 'update', 'clock 1017000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning', 'REPEAT warning']);
+    // Waiting under a fullscreen window: nothing until shown, then 5 s after that.
+    assert.deepEqual(driver(['wallpaper', 'covered 1', 'accept warning:1 duration:0', 'update', 'clock 1010000', 'update',
+        'covered 0', 'update', 'clock 1014999', 'update', 'clock 1015000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 590000), 'SHOWN warning', 'REPEAT warning']);
 });
 
 test('work area: CielWin AlertLayerWorkArea.Resolve, and the wallpaper output minus reserved zones', () => {
@@ -522,11 +722,11 @@ const startServer = () => new Promise((resolve, reject) => {
     child.on('exit', code => { if (!state.port) reject(new Error(`harness exited ${code}`)); });
 });
 
-const post = (port, token, body) => new Promise((resolve, reject) => {
+const post = (port, token, body, path = '/v1/alerts') => new Promise((resolve, reject) => {
     const socket = connect({ port, host: '127.0.0.1' });
     const chunks = [];
     const payload = Buffer.from(body, 'utf8');
-    socket.on('connect', () => socket.write(Buffer.concat([Buffer.from(`POST /v1/alerts HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n`
+    socket.on('connect', () => socket.write(Buffer.concat([Buffer.from(`POST ${path} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n`
         + `Authorization: Bearer ${token}\r\nContent-Type: application/json\r\nContent-Length: ${payload.length}\r\n\r\n`), payload])));
     socket.on('data', chunk => chunks.push(chunk));
     socket.on('error', reject);
@@ -539,7 +739,7 @@ const post = (port, token, body) => new Promise((resolve, reject) => {
 test('server: valid 202 ok, busy-ignore 202 ok, invalid 400 with the reason', async () => {
     const server = await startServer();
     try {
-        assert.deepEqual(await post(server.port, server.token, '{"failed":1,"warning":9,"duration":30}'), { status: 202, body: 'ok' });
+        assert.deepEqual(await post(server.port, server.token, '{"failed":1,"warning":9,"duration":30}'), { status: 202, body: 'ok id=1' });
         assert.deepEqual(await post(server.port, server.token, '{"warning":1}'), { status: 202, body: 'ok' });
         assert.deepEqual(await post(server.port, server.token, '{"warning":0}'), { status: 400, body: "error: 'warning:0' must be 1..16" });
         assert.deepEqual(await post(server.port, server.token, '{"info":1}'), { status: 400, body: "error: unknown field 'info'" });
@@ -551,6 +751,38 @@ test('server: valid 202 ok, busy-ignore 202 ok, invalid 400 with the reason', as
         assert.equal(server.stdout.match(/SHOW /g).length, 1);
         assert.match(server.stdout, /TRACE alert ignored: one is already showing/);
     } finally { server.child.kill('SIGKILL'); }
+});
+
+test('server: H1 held warning, ok id=<n>, POST /v1/alerts/clear and the duration:0 rejection end to end', async () => {
+    const server = await startServer();
+    const clear = body => post(server.port, server.token, body, '/v1/alerts/clear');
+    try {
+        assert.deepEqual(await post(server.port, server.token, '{"failed":1,"duration":0}'),
+            { status: 400, body: "error: 'duration:0' requires warning only" });
+        assert.deepEqual(await post(server.port, server.token, '{"warning":1,"duration":0}'), { status: 202, body: 'ok id=1' });
+        assert.deepEqual(await post(server.port, server.token, '{"warning":2}'), { status: 202, body: 'ok' });
+        assert.deepEqual(await clear('{"id":7}'), { status: 202, body: 'ok' });
+        assert.deepEqual(await clear('{"id":1}'), { status: 202, body: 'ok' });
+        assert.deepEqual(await clear('{}'), { status: 202, body: 'ok' });
+        assert.deepEqual(await clear('{"id":0}'), { status: 400, body: "error: field 'id' must be a whole number >= 1" });
+        assert.deepEqual(await clear('{"warning":1}'), { status: 400, body: "error: unknown field 'warning'" });
+        assert.deepEqual(await clear(`{}${' '.repeat(62)}`), { status: 202, body: 'ok' });
+        assert.deepEqual(await clear(`{}${' '.repeat(63)}`), { status: 413, body: 'error: request body is too large' });
+        assert.deepEqual(await post(server.port, server.token, '{"warning":1,"duration":0}'), { status: 202, body: 'ok id=2' });
+        assert.deepEqual(await clear('{}'), { status: 202, body: 'ok' });
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(server.stdout.match(/TRACE alert \d+ cleared/g).join(), 'TRACE alert 1 cleared,TRACE alert 2 cleared');
+        assert.equal(server.stdout.match(/HIDE/g).length, 2);
+    } finally { server.child.kill('SIGKILL'); }
+});
+
+test('docs: H1 the README documents the held warning, its id, the clear route and the hold max setting', () => {
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+    assert.match(readme, /"duration": ?0/);
+    assert.match(readme, /ok id=<n>/);
+    assert.match(readme, /\/v1\/alerts\/clear/);
+    assert.match(readme, /alert-hold-max-seconds/);
+    assert.match(readFileSync(join(ROOT, 'docs', 'cielwin-portability.md'), 'utf8'), /\/v1\/alerts\/clear/);
 });
 
 // ---- Page side: shared/js/alert-overlay.js over the bridge ----
@@ -616,11 +848,14 @@ const OVERLAY_REFERENCE_SHA256 = 'ca3ea282f62fcee9e009548ac0a9556bd018c8c2d99d7e
 const stripLinuxPort = text => text.replace(
     /(?:\n(?=\/\/ Linux port begin))?^[ \t]*\/\/ Linux port begin[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux port end\.\n/gm, '');
 
-test('overlay page: the CielWin overlay plus four additive Linux blocks (bridge, markers, keyed letters)', async () => {
+test('overlay page: the CielWin overlay plus twelve additive Linux blocks (bridge, markers, keyed letters, W1 static layers, W4 bands)', async () => {
     const { createHash } = await import('node:crypto');
     const overlay = read('shared/js/alert-overlay.js');
-    assert.equal(overlay.match(/\/\/ Linux port begin/g).length, 4);
-    assert.equal(overlay.match(/\/\/ Linux port end\./g).length, 4);
+    // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md) adds three blocks: the static-layer cache, its use in
+    // drawFailureOverlay and its release in renderAlertOverlay. W4 adds five: the band/module/backdrop helpers,
+    // their use in drawFailureOverlay, drawTilePixelated and captureBackdropIfNeeded, and the module release.
+    assert.equal(overlay.match(/\/\/ Linux port begin/g).length, 12);
+    assert.equal(overlay.match(/\/\/ Linux port end\./g).length, 12);
     assert.equal(createHash('sha256').update(stripLinuxPort(overlay)).digest('hex'), OVERLAY_REFERENCE_SHA256);
     // Exactly two markers leave the page, both from postToHost's own "ready"/"done".
     assert.deepEqual([...overlay.matchAll(/CIELINUX_ALERT_[A-Z_0-9]+/g)].map(m => m[0]), ['CIELINUX_ALERT_READY_V1', 'CIELINUX_ALERT_DONE_V1']);

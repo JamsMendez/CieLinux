@@ -198,6 +198,9 @@ static int controller(const QString &root) {
     CHECK(played.size() == 1);
     sounds.onAlertShown("failed");
     CHECK(played.size() == 2 && outputs == 1); // one output per kind for the process
+    // H4: a held warning's repeat is silent without a sound for its kind.
+    sounds.onAlertRepeated("warning");
+    CHECK(played.size() == 2);
 
     // Mute: persisted as alert-sounds = off; shown alerts stay silent.
     sounds.toggle();
@@ -205,17 +208,24 @@ static int controller(const QString &root) {
     CHECK(slurp(settingsPath).contains("alert-sounds = off"));
     sounds.onAlertShown("failed");
     CHECK(played.size() == 2 && traces.last() == "alert sound-muted kind=failed");
+    // H4: a repeat while muted is silent and not traced (it comes every 5 s).
+    const qsizetype tracesBefore = traces.size();
+    sounds.onAlertRepeated("failed");
+    CHECK(played.size() == 2 && traces.size() == tracesBefore);
     sounds.toggle();
     CHECK(sounds.enabled() && slurp(settingsPath).contains("alert-sounds = on"));
+    // H4: unmuted, a repeat plays the kind's sound like a shown alert.
+    sounds.onAlertRepeated("failed");
+    CHECK(played.size() == 3 && traces.last() == "alert sound-played kind=failed");
 
     // A missing file is skipped and traced, no crash.
     QFile::remove(dir + "/failed.wav");
     sounds.onAlertShown("failed");
-    CHECK(played.size() == 2 && traces.last() == "alert sound-skipped kind=failed reason=missing-file");
+    CHECK(played.size() == 3 && traces.last() == "alert sound-skipped kind=failed reason=missing-file");
     // A symlink planted in the folder is never followed outside it.
     CHECK(QFile::link(root + "/in/alarm.wav", dir + "/failed.wav"));
     sounds.onAlertShown("failed");
-    CHECK(played.size() == 2 && traces.last() == "alert sound-skipped kind=failed reason=missing-file");
+    CHECK(played.size() == 3 && traces.last() == "alert sound-skipped kind=failed reason=missing-file");
     QFile::remove(dir + "/failed.wav");
     // A hand-edited value can never reach outside the folder (settings drop it on read).
     CHECK(Settings::parse("failed-sound = ../../in/alarm.wav\n").failedSound.isEmpty());
@@ -368,6 +378,7 @@ test('host wiring: alertShown plays through AlertSounds; tray gets its controls;
     assert.ok(main.indexOf('AlertSounds alertSounds(') < main.indexOf('Tray tray(sceneHost'));
     assert.match(main, /alertSounds\.trayControls\(\)\);/);
     assert.match(main, /QObject::connect\(&alertDriver, &AlertDriver::alertShown, &alertSounds, &AlertSounds::onAlertShown\);/);
+    assert.match(main, /QObject::connect\(&alertDriver, &AlertDriver::alertRepeated, &alertSounds, &AlertSounds::onAlertRepeated\);/);
     const sounds = read('alert-sounds.cpp');
     assert.match(sounds, /QMediaPlayer/);
     assert.match(sounds, /QAudioOutput/);

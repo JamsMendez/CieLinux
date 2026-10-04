@@ -24,6 +24,7 @@ struct Settings {
     int frameRate = 30;                          // frame-rate: global 30 | 60
     bool alertSoundsEnabled = true;              // alert-sounds
     QString failedSound, warningSound;           // bare .wav/.mp3/.m4a file name; empty = silent
+    int alertHoldMaxSeconds = 600;               // alert-hold-max-seconds, 10-3600 (CieLinux only)
 
     static Settings parse(const QString &content);
     // The whole file, comments included, as a save writes it.

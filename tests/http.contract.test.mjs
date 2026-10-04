@@ -96,6 +96,10 @@ int main(int argc, char **argv) {
             // CielWin with alerts turned off.
             std::cout << "ALERT " << command.toStdString() << std::endl;
             return refuse ? QStringLiteral("error: alerts are disabled") : QStringLiteral("ok");
+        }, [&](quint64 id) {
+            // H1: the clear handler sees the validated id, 0 meaning "the held alert".
+            std::cout << "CLEAR " << id << std::endl;
+            return QStringLiteral("ok");
         });
         if (server.start()) std::cout << "LISTENING " << server.port() << std::endl;
         else std::cout << "UNAVAILABLE" << std::endl;
@@ -394,6 +398,26 @@ test('server: alerts route runs the same gates with its 1024 B cap, then hands t
     assert.match(server.stdout, /ALERT warning:1\nALERT warning:1\nALERT failed:2 duration:7\n/);
 });
 
+test('server: H1 the alerts clear route runs the same gates with its 64 B cap, then hands the id over', async () => {
+    const p = server.port, t = server.token;
+    const path = '/v1/alerts/clear';
+    expectReply(await req(p, { path, method: 'GET' }), 405, 'error: method not allowed');
+    expectReply(await req(p, { path }), 401, 'error: missing or invalid bearer token');
+    expectReply(await req(p, { path, token: t, contentType: 'text/plain' }), 415, 'error: content type must be application/json');
+    expectReply(await req(p, { path, token: t, body: 'x'.repeat(65) }), 413, 'error: request body is too large');
+    expectReply(await req(p, { path, token: t, body: 'x'.repeat(100), chunked: true }), 413, 'error: request body is too large');
+    expectReply(await req(p, { path, token: t, body: Buffer.from([0xff]) }), 400, 'error: body is not valid UTF-8');
+    expectReply(await req(p, { path, token: t, body: '{}'.padEnd(64, ' ') }), 202, 'ok');
+    expectReply(await req(p, { path, token: t, body: '{"id":5}' }), 202, 'ok');
+    expectReply(await req(p, { path, token: t, body: '{"id":5}', chunked: true }), 202, 'ok');
+    expectReply(await req(p, { path, token: t, body: '{"id":0}' }), 400, "error: field 'id' must be a whole number >= 1");
+    expectReply(await req(p, { path, token: t, body: '{"warning":1}' }), 400, "error: unknown field 'warning'");
+    expectReply(await req(p, { path, token: t, body: 'not json' }), 400, 'error: body is not valid JSON');
+    expectReply(await req(p, { path: '/v1/alerts/clear/x', token: t, body: '{}' }), 404, 'error: no such route');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.match(server.stdout, /CLEAR 0\nCLEAR 5\nCLEAR 5\n/);
+});
+
 test('server: an alert handler answering "alerts are disabled" maps to 503 (CielWin status table)', async () => {
     const refusing = await startServer(['0', 'refuse']);
     try {
@@ -482,6 +506,9 @@ test('host wiring: settings-gated server on the GUI thread, scene route through 
     assert.match(main, /return sceneHost\.setScene\(scene\);/);
     // A4: the alert route hands the translated command to the alert driver on this thread.
     assert.match(main, /const QString reply = alertDriver\.accept\(command\);/);
+    // H1: the clear route clears through the same driver; the hold max comes from the settings.
+    assert.match(main, /const QString reply = alertDriver\.clear\(id\);/);
+    assert.match(main, /stored\.settings\.alertHoldMaxSeconds/);
     assert.ok(main.indexOf('SceneHost sceneHost(') < main.indexOf('HttpServer>('));
     assert.ok(main.indexOf('HttpServer>(') < main.indexOf('app.exec()'));
     const server = read('http-server.cpp');

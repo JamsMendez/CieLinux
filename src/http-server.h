@@ -14,7 +14,8 @@ class QTcpServer;
 //
 // Loopback only: 127.0.0.1, plus ::1 when available (CielWin's `localhost`
 // prefix, which may resolve to the IPv6 loopback). Every reply is plain text,
-// `ok` or `error: <reason>`, and closes the connection. Every request runs the
+// `ok` (`ok id=<n>` for an accepted alert) or `error: <reason>`, and closes the
+// connection. Every request runs the
 // same gate, first failing check wins:
 //   1 loopback peer (403)  2 no Origin header (403)  3 Host is 127.0.0.1:<port>
 //   or localhost:<port> (403)  4 known route (404)  5 POST (405 + Allow: POST)
@@ -41,6 +42,8 @@ inline constexpr char scenePath[] = "/v1/wallpaper/scene";
 inline constexpr int sceneMaxBodyBytes = 256;
 inline constexpr char alertsPath[] = "/v1/alerts";
 inline constexpr int alertsMaxBodyBytes = 1024;
+inline constexpr char alertsClearPath[] = "/v1/alerts/clear";
+inline constexpr int alertsClearMaxBodyBytes = 64;
 inline constexpr int maxHeaderBytes = 8 * 1024;
 inline constexpr int requestTimeoutMs = 2000;
 inline constexpr int maxConnections = 8;
@@ -64,9 +67,12 @@ public:
     // returns the reply ("ok" or "error: <reason>", mapped by AlertHttpProtocol::statusCodeFor).
     // Empty means the alert route is off: it answers exactly like an unknown path (CielWin).
     using AlertHandler = std::function<QString(const QString &command)>;
+    // POST /v1/alerts/clear with the validated id (0: the held alert); the reply maps like the
+    // alert handler's. Empty means the clear route answers exactly like an unknown path.
+    using AlertClearHandler = std::function<QString(quint64 id)>;
     // Port 0 picks an ephemeral port (tests); the host passes the settings port.
     HttpServer(quint16 port, QByteArray token, SceneSwitch switchScene, AlertHandler handleAlert = {},
-               QObject *parent = nullptr);
+               AlertClearHandler clearAlert = {}, QObject *parent = nullptr);
     ~HttpServer() override;
     // Binds and starts serving. False (one log line, nothing bound) when the
     // IPv4 loopback port is busy; the host then keeps running without HTTP.
@@ -81,6 +87,7 @@ private:
     QByteArray token;
     SceneSwitch switchScene;
     AlertHandler handleAlert;
+    AlertClearHandler clearAlert;
     QTcpServer *ipv4 = nullptr, *ipv6 = nullptr;
     int activeConnections = 0;
 };

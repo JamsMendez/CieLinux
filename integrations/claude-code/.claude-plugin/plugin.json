@@ -1,0 +1,5 @@
+{
+  "name": "cielinux-scenes",
+  "version": "0.1.0",
+  "description": "Drives the CieLinux wallpaper scene and alerts from Claude Code activity over its local HTTP API."
+}

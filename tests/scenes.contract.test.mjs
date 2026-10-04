@@ -56,6 +56,13 @@ static int parseCases() {
     CHECK(d.wallpaperMode == "scene-mini" && d.scene == "processing");
     CHECK(d.httpServerEnabled && d.httpServerPort == 43811 && d.miniPosition == "top-right");
     CHECK(d.alertSoundsEnabled && d.failedSound.isEmpty() && d.warningSound.isEmpty());
+    // H1: alert-hold-max-seconds, 10-3600 (default 600); anything else keeps the default.
+    CHECK(d.alertHoldMaxSeconds == 600);
+    CHECK(Settings::parse("alert-hold-max-seconds = 120\n").alertHoldMaxSeconds == 120);
+    CHECK(Settings::parse("alert-hold-max-seconds = 10\nalert-hold-max-seconds = 3600\n").alertHoldMaxSeconds == 3600);
+    CHECK(Settings::parse("alert-hold-max-seconds = 120\nalert-hold-max-seconds = 9\n").alertHoldMaxSeconds == 120);
+    for (const char *bad : {"0", "9", "3601", "-60", "+60", "60s", "6e2", "", "99999999999"})
+        CHECK(Settings::parse(QStringLiteral("alert-hold-max-seconds = ") + bad) == d);
     CHECK(Settings::parse(QString()) == d);
     // Malformed content never throws and keeps every default.
     CHECK(Settings::parse(QString::fromUtf8("\x01\x02 = = =\n=scene\nscene\n# scene = idle\n   \n\xff\xfe")) == d);
@@ -86,7 +93,7 @@ static int parseCases() {
     Settings custom;
     custom.wallpaperMode = "scene-mini"; custom.scene = "explorer"; custom.httpServerEnabled = false;
     custom.httpServerPort = 1; custom.miniPosition = "left-center"; custom.alertSoundsEnabled = false;
-    custom.failedSound = "failed.m4a"; custom.warningSound = "warning.mp3";
+    custom.failedSound = "failed.m4a"; custom.warningSound = "warning.mp3"; custom.alertHoldMaxSeconds = 45;
     CHECK(Settings::parse(custom.serialize()) == custom);
     CHECK(Settings::parse(d.serialize()) == d);
     CHECK(d.serialize().contains("\nframe-rate = 30\n"));
@@ -97,7 +104,8 @@ static int parseCases() {
         CHECK(Settings::parse(QStringLiteral("frame-rate = ") + bad) == d);
     for (const char *line : {"\nwallpaper-mode = scene-mini\n", "\nscene = processing\n", "\nhttp-server = on\n",
                              "\nhttp-server-port = 43811\n", "\nmini-position = top-right\n",
-                             "\nalert-sounds = on\n", "\nfailed-sound = \n", "\nwarning-sound = \n"})
+                             "\nalert-sounds = on\n", "\nfailed-sound = \n", "\nwarning-sound = \n",
+                             "\nalert-hold-max-seconds = 600\n"})
         CHECK(d.serialize().contains(QString::fromUtf8(line)));
     std::cout << "PARSE_OK";
     return 0;

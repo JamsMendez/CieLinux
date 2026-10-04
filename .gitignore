@@ -10,3 +10,6 @@ build-*/
 *.swp
 __pycache__/
 node_modules/
+
+# Claude Code plugin: type declarations written by Claude Code on load
+integrations/claude-code/.claude-plugin/types/

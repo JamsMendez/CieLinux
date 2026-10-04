@@ -23,10 +23,10 @@ const referenceSha256 = {
     config: '1abc6c847879e96cd1ff5088c46a5b77c7c19de370e44488c03af31bd38a3a1a',
     math: '5507d42ea5685aac5af4a132c0fc2b8dff62b50ce9503e4666a46c3c24f52e91',
     glyphs: '57284fa7cdceede3f0d79e4a95bf7df717ef35f69b8d2ac5cb492ea508f95b86',
-    // Linux mini optimization (O1, odd/tasks/mini-scene-optimization.md); CielWin reference: aec872a4c6ea50409cfed6cd15a93593b1e267628079edffbd57447b6ee87d5c
-    earth: 'ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88',
-    // Linux mini optimization (O1, odd/tasks/mini-scene-optimization.md); CielWin reference: 1dde4516d984afabfe84aeca85e17f8496dd15221a91eb7ae8e75ce7c6aae9d5
-    rings: '7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70',
+    // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88; CielWin reference: aec872a4c6ea50409cfed6cd15a93593b1e267628079edffbd57447b6ee87d5c
+    earth: 'ab076276fc5d037782f9228699881d19fc8ea7e242ba59dcd494099faa46bb1d',
+    // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: 7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70; CielWin reference: 1dde4516d984afabfe84aeca85e17f8496dd15221a91eb7ae8e75ce7c6aae9d5
+    rings: '4069f9e540d92e24874e94c866b18986a2c7c18ade6eebe63424cbf737e3b79e',
     // Re-pinned after old-name→CielWin comment rename (text-only); was 231a4faf26467d05f206301f69b0613f0974ade0c43e680685c911961724f3ae
     main: '15f472543e2d53fab4157ade61bcda125be14306d3d3dc12d2e7ab7288ace698',
 };

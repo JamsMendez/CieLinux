@@ -259,7 +259,9 @@ sound, mute; see [Alerts](#alerts)), with two differences:
 - **Held while covered:** an alert sent while the wallpaper is covered waits silently
   and starts, with its sound, when the wallpaper is uncovered, within the alert's
   5-minute maximum age. An alert already showing when a fullscreen window appears keeps
-  its timing and ends on time.
+  its timing and ends on time. A [held warning](#held-warning) waits the same way, but
+  its hold max still counts from the request, so a long fullscreen session never brings
+  back a stale question.
 
 ### Hyprland watch
 
@@ -338,16 +340,27 @@ curl -i -X POST http://127.0.0.1:43811/v1/wallpaper/scene \
 curl -i -X POST http://127.0.0.1:43811/v1/alerts \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"failed":1,"warning":2,"duration":8}'
+# -> 202 ok id=1
+
+# Hold a warning until it is cleared (see Held warning below), then clear it.
+curl -i -X POST http://127.0.0.1:43811/v1/alerts \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"warning":1,"duration":0}'
+# -> 202 ok id=2
+curl -i -X POST http://127.0.0.1:43811/v1/alerts/clear \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"id":2}'
 # -> 202 ok
 ```
 
 | Route | Body (max) | Success |
 | --- | --- | --- |
 | `POST /v1/wallpaper/scene` | `{"scene":"<name>"}` (256 bytes) | `202 ok` |
-| `POST /v1/alerts` | alert counters (1024 bytes) | `202 ok` |
+| `POST /v1/alerts` | alert counters (1024 bytes) | `202 ok id=<n>`, or `202 ok` when ignored |
+| `POST /v1/alerts/clear` | `{}` or `{"id":<n>}` (64 bytes) | `202 ok` |
 
-Replies are plain text: `ok` or `error: <reason>`. Checks run in this order and the
-first failure answers:
+Replies are plain text: `ok`, `ok id=<n>` (an accepted alert) or `error: <reason>`.
+Checks run in this order and the first failure answers:
 
 1. Loopback peer (403).
 2. No `Origin` header (403).
@@ -379,7 +392,7 @@ bytes):
 | --- | --- | --- |
 | `failed` | number of FAILED tiles | whole number 1–16 |
 | `warning` | number of WARNING tiles | whole number 1–16 |
-| `duration` | seconds on screen | whole number 1–60, default 5 |
+| `duration` | seconds on screen; `0` holds a warning until cleared | whole number 1–60, default 5; `0` with `warning` only |
 
 - At least one of `failed`/`warning` is required, and together they may ask for at most
   16 tiles.
@@ -391,15 +404,87 @@ bytes):
   letters in their CielWin hue at full brightness so they stay readable through the
   luminance key (dark colors fade out there).
 
-Replies: `202 ok` when accepted; `400 error: <reason>` for a bad body, naming the field
-or token (`error: unknown field 'info'`, `error: field 'warning' must be a whole
+Replies: `202 ok id=<n>` when accepted, `n` a whole number that grows with every
+accepted alert of this CieLinux run; `400 error: <reason>` for a bad body, naming the
+field or token (`error: unknown field 'info'`, `error: field 'warning' must be a whole
 number`, `error: 'warning:0' must be 1..16`, `error: at least one 'warning:N' or
-'failed:N' group is required`).
+'failed:N' group is required`, `error: 'duration:0' requires warning only`). Callers
+that only read the status code are unaffected by the id; a caller that compared the body
+to exactly `ok` should check that it starts with `ok`.
 
 Only one alert exists at a time. A request that arrives while one is showing (or still
-waiting to show) is ignored, yet still answered `202 ok`. An alert that cannot start
-within 5 minutes is dropped. In the wallpaper, alerts wait while a fullscreen window
-covers it (see [Alerts in the wallpaper](#alerts-in-the-wallpaper)).
+waiting to show) is ignored, yet still answered `202 ok`, without an id, since there is
+nothing to clear. An alert that cannot start within 5 minutes is dropped. In the
+wallpaper, alerts wait while a fullscreen window covers it (see
+[Alerts in the wallpaper](#alerts-in-the-wallpaper)). The exceptions are held warnings,
+below.
+
+### Held warning
+
+`{"warning": n, "duration": 0}` shows a warning that stays up until it is cleared, for
+example while a program waits for your answer. `duration: 0` is accepted only with
+`warning` alone: a failure has nothing to wait for.
+
+- **Clearing:** `POST /v1/alerts/clear` with `{"id": n}` clears that alert (held or
+  timed) if it is still showing, suspended or waiting; `{}` clears the held alert
+  whatever its id, and never a timed one. The reply is always `202 ok`, whether or not
+  something was cleared. The route runs the same checks as the others; its body is at
+  most 64 bytes and holds only the optional `id` (a whole number of at least 1).
+- **Safety max:** a held warning ends by itself `alert-hold-max-seconds` (default 600)
+  after it was requested, not after it was first shown, so a crashed caller never leaves
+  it up forever. A held warning still waiting to start is dropped by that deadline or
+  the 5-minute start limit, whichever comes first.
+- **Failed preempts held:** a request with any failed tile while a held warning shows
+  (or waits) is shown at once for its own duration, with its sound and shake. The held
+  warning is suspended and comes back when the failed alert ends, for the rest of its
+  hold, under the same id and without playing its sound again. If it is cleared or its
+  hold max passes meanwhile, it does not come back.
+- **Repeating sound:** while a held warning shows, its warning sound (when alert sounds
+  are on and a warning sound is set) plays again every 5 seconds until it is cleared or
+  its hold max passes. It does not repeat while suspended, waiting or covered by a
+  fullscreen window; once it shows again, the next repeat comes 5 seconds later.
+- **Other requests:** a warning while a held warning shows is ignored as usual. A held
+  warning sent while a timed alert shows waits for it and starts when it ends (within
+  the 5-minute start limit).
+
+### Writing a client
+
+What a caller (a plugin, a script, CielWin's own callers) needs beyond the routes above.
+The [Claude Code plugin](#claude-code-integration) follows these rules and is a working
+reference.
+
+- **Token:** read the token file and cache it. On a `401`, read the file again and
+  retry once: CieLinux replaces a malformed file with a fresh token.
+- **Replies:** treat any `202` as success and read the body only for the id. Check that
+  it starts with `ok`, never that it equals `ok`.
+- **Scenes:** CieLinux keeps the last scene it was sent. A caller that sets a scene for
+  some activity should send the scene it wants afterwards (usually `idle`) when that
+  activity ends.
+- **Held warning flow:**
+  1. Send `{"warning": 1, "duration": 0}` when your program starts waiting for the user.
+  2. `202 ok id=<n>`: the warning is shown (or waiting to show). Keep `n`.
+  3. `202 ok` without an id: another alert was showing, so yours was ignored. Nothing is
+     on screen for you and there is nothing to clear.
+  4. `400`: the server has no held warnings (CielWin today, or an older CieLinux). Fall
+     back to a timed warning, such as `{"warning": 1, "duration": 8}`.
+  5. When the wait ends (answered, cancelled, or your program exits), send
+     `POST /v1/alerts/clear` with `{"id": n}`. Prefer the id over `{}`: `{}` clears
+     whatever held warning is up, including one from another caller.
+- **Crashes:** a caller that dies without clearing is covered by
+  `alert-hold-max-seconds`. Do not rely on it for normal flow.
+- **Failures while holding:** a failed alert can be sent while your held warning is up.
+  It shows at once, and your warning comes back after it under the same id, so the id
+  stays valid for the clear.
+
+## Claude Code integration
+
+[`integrations/claude-code/`](integrations/claude-code/README.md) holds `cielinux-scenes`,
+a Claude Code plugin that drives the scene and alerts from Claude Code activity over the
+HTTP API: `raphael` while Claude thinks or plans, `processing` while it edits or runs
+commands, `explorer` while it reads or searches, `idle` once the session goes quiet, a
+warning when Claude asks you something (optionally held until you answer) and a failed
+alert when Bash fails. It reads the bearer token from the token file above. Its README
+covers how it works, install, configuration and uninstall.
 
 ## Sounds
 
@@ -420,7 +505,8 @@ tray.
 A newly shown alert plays its sound once, in either mode: the failed sound when it has
 any failed tile, otherwise the warning sound (no fallback to the other kind). A re-show
 of the same alert (for example after a mode switch) never plays again, and an alert
-shown while muted stays silent even if you unmute. Playback uses QtMultimedia on the
+shown while muted stays silent even if you unmute. A held warning is the one exception:
+it repeats every 5 seconds while it shows (see Held warning). Playback uses QtMultimedia on the
 default output (PipeWire). A missing or undecodable file is logged and the alert itself
 always goes on. Log lines never include paths.
 
@@ -445,6 +531,7 @@ apps. It is created with commented defaults on first start.
 | `http-server-port` | 1–65535 | `43811` | hand edit (read at start) |
 | `alert-sounds` | `on`, `off` | `on` | tray **Alert sounds** |
 | `failed-sound`, `warning-sound` | bare file name of a `.wav`, `.mp3` or `.m4a` | empty (silent) | tray **Import … sound…** / **Remove … sound**; an unusable value clears the sound |
+| `alert-hold-max-seconds` | 10–3600 (CieLinux only) | `600` | hand edit (read at start); the [held warning](#held-warning) safety max |
 
 Legacy CielWin spellings are still read, and the new key wins whatever the line order:
 `wallpaper-mode = html|html-mini|mini`, `wallpaper-scene`, `mini-corner`, `alert-http`,
@@ -488,6 +575,9 @@ for example `HDMI-A-2`. This section lists every line CieLinux emits:
 | `CIELINUX_ALERT shown kind=failed\|warning` | A new alert is on screen (failed wins); its sound plays from here. |
 | `CIELINUX_ALERT alert ignored: one is already showing` / `… already waiting to show` | A request arrived while the single alert slot was taken. |
 | `CIELINUX_ALERT alert dropped: waited longer than the <age> max age without starting` | A held alert expired. |
+| `CIELINUX_ALERT alert dropped: held past the <max> hold max` | A held warning that was waiting or suspended reached `alert-hold-max-seconds`. |
+| `CIELINUX_ALERT alert <n> suspended: a failed alert preempts it` | A failed alert took the place of held warning `<n>`; it resumes afterwards. |
+| `CIELINUX_ALERT alert <n> cleared` | `POST /v1/alerts/clear` removed alert `<n>`. |
 | `CIELINUX_ALERT alert rejected: <error>` | An alert command could not be parsed. |
 | `CIELINUX_ALERT page-done gen=<n>` | The scene page reports the alert finished. |
 | `CIELINUX_ALERT alert hide-failed` | Taking the previous alert off the surface threw; it is not retried. |
@@ -639,7 +729,7 @@ node --test tests/*.test.mjs                 # from CieLinux/
 node --test CieLinux/tests/*.test.mjs        # from the repository root
 ```
 
-32 contract test files, 282 tests. They read the sources and compile small native
+36 contract test files, 346 tests. They read the sources and compile small native
 harnesses against `src/` (they need the same Qt and CMake toolchain as the build).
 `tests/paths.mjs` maps file names to `src/` and `scenes/`.
 
@@ -674,6 +764,7 @@ CieLinux/
 │   ├── view.qml                  QtWebEngine view
 │   └── lumakey.frag              mini luminance key shader
 ├── systemd/cielinux.service.in   user unit template
+├── integrations/claude-code/      cielinux-scenes Claude Code plugin (see its README)
 └── tests/                        Node contract tests
 ```
 

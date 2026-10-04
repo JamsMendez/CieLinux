@@ -18,8 +18,10 @@ import { SRC, source } from './paths.mjs';
 const read = name => readFileSync(source(name), 'utf8');
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const O1B_SHA256 = 'af1b6a3ebbb98ef7006839ab03f9967c6ae6191d98a113bfe0fde54a31930211';
+// W1 blocks (odd/tasks/wallpaper-explorer-idle-cpu.md) are stripped too: they only add lines.
 const stripO1c = source => source.replace(
-    /^[ \t]*\/\/ Linux mini optimization begin \((O1c P1|O1d)\)[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux mini optimization end \(\1\)\.\n/gm, '');
+    /^[ \t]*\/\/ Linux mini optimization begin \((O1c P1|O1d)\)[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux mini optimization end \(\1\)\.\n/gm, '').replace(
+    /^[ \t]*\/\/ Linux wallpaper optimization begin \(W1\)[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux wallpaper optimization end \(W1\)\.\n(\n(?=\/\/|function))?/gm, '');
 const MINI_HEAD_RADIUS = 0.55; // CSS px, user-approved (O1d)
 
 // Verbatim O1b drawRisingSparks (rising-sparks.js at af1b6a3e...), renamed with an o1b prefix, plus a
@@ -175,6 +177,9 @@ test('stripping the O1c P1 and O1d blocks restores the O1b rising-sparks.js byte
 
 test('full variant: rising sparks stream is identical to O1b, with no sprites and no atlas', () => {
     const h = harness({ variant: 'full', width: 320, height: 200 });
+    // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md) stamps mature full-variant sparks from an atlas; disabling
+    // its atlas runs the unchanged reference path below the W1 block (W1 itself: wallpaper-optimization.contract).
+    h.evaluate('risingSparkFullAtlasFor = () => null');
     for (const time of [0, ...sparkTimes]) {
         const o1b = h.record(), now = h.record();
         h.sandbox.o1bDrawRisingSparks(o1b.proxy, time);

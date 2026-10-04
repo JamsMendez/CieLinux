@@ -235,6 +235,117 @@ function drawRisingSparkSprites(context, atlas, trail, size, alpha) {
 }
 // Linux mini optimization end (O1c P1).
 
+// Linux wallpaper optimization begin (W1): odd/tasks/wallpaper-explorer-idle-cpu.md. In the full variant a
+// mature spark (older than RISING_SPARK_TRAIL_SECONDS, so its trail samples are evenly spaced in time) is
+// drawn as its two trail halves (samples 0-3 and 3-6) stamped from a pre-baked atlas instead of 6 strokes +
+// 1 head fill, each per-frame anti-aliased path. Unlike the mini atlas (O1c P1) every cell keeps the
+// reference's additive brightness: half 0 (segment alphas 1/6..1/2, overlapping caps sum to < 1) is baked at
+// unit alpha; half 1 (segments 4..6 plus the 1.3 x size head, whose overlaps sum up to 2) is baked at half
+// alpha so nothing clamps in the bake, then stamped once at globalAlpha 2a (a <= 0.5) or twice at a. The
+// chord placement leaves the inner trail samples off the analytic trail by a median 0.05 px, p99 0.5 px and
+// worst ~0.8 px at 3440x1440 (bounded in wallpaper-optimization.contract.test.mjs); lengths are bucketed every
+// 0.5 device px and sizes every 0.05. Cells are laid out in rows at most 4096 device px wide. Young sparks keep the strokes.
+// Sprites are placed in the context's own transform, so the alert see-through hook (a translated tile
+// layer) gets the same streaks. The atlas is rebuilt only when W, H or DPR change.
+const RISING_SPARK_FULL_SPRITE_PAD = 3; // CSS px around the streak: head radius 1.82 plus anti-aliasing
+const RISING_SPARK_FULL_SIZE_STEP = 0.05;
+const RISING_SPARK_FULL_HALF_GAIN = [1, 0.5]; // bake gain per trail half (see above)
+const RISING_SPARK_FULL_ATLAS_MAX_WIDTH = 4096; // device px
+let risingSparkFullAtlas = null;
+
+function risingSparkFullAtlasFor(width, height, dpr) {
+  const cached = risingSparkFullAtlas;
+  if (cached !== null && cached.width === width && cached.height === height && cached.dpr === dpr) return cached;
+  const halfSeconds = RISING_SPARK_TRAIL_SECONDS / 2;
+  const lengthMin = RISING_SPARK_SPEED_MIN * height * halfSeconds;
+  const lengthMax = RISING_SPARK_SPEED_MAX * height * halfSeconds * Math.hypot(1, RISING_SPARK_TILT_BASE + RISING_SPARK_TILT_EDGE);
+  const lengthStep = RISING_SPARK_SPRITE_LENGTH_STEP_DEVICE_PX / dpr;
+  const lengthCount = Math.ceil((lengthMax - lengthMin) / lengthStep) + 1;
+  const sizeCount = Math.round((RISING_SPARK_SPRITE_SIZE_MAX - RISING_SPARK_SPRITE_SIZE_MIN) / RISING_SPARK_FULL_SIZE_STEP) + 1;
+  const lengths = new Float64Array(lengthCount), sizes = new Float64Array(sizeCount);
+  for (let col = 0; col < lengthCount; col++) lengths[col] = lengthMin + col * lengthStep;
+  for (let k = 0; k < sizeCount; k++) sizes[k] = RISING_SPARK_SPRITE_SIZE_MIN + k * RISING_SPARK_FULL_SIZE_STEP;
+  const pad = RISING_SPARK_FULL_SPRITE_PAD;
+  const cellWidth = Math.ceil((lengths[lengthCount - 1] + 2 * pad) * dpr);
+  const cellHeight = Math.ceil(2 * pad * dpr);
+  const perRow = Math.max(1, Math.floor(RISING_SPARK_FULL_ATLAS_MAX_WIDTH / cellWidth));
+  const cellCount = sizeCount * 2 * lengthCount;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.min(cellCount, perRow) * cellWidth;
+  canvas.height = Math.ceil(cellCount / perRow) * cellHeight;
+  const bake = canvas.getContext('2d');
+  bake.globalCompositeOperation = 'lighter';
+  bake.lineCap = 'round';
+  // Cell index (sizeIndex * 2 + half) * lengthCount + col: the half's tail at (pad, pad), its head end at
+  // (pad + length, pad).
+  for (let sizeIndex = 0; sizeIndex < sizeCount; sizeIndex++) {
+    const sparkWidth = RISING_SPARK_WIDTH * sizes[sizeIndex];
+    for (let half = 0; half < 2; half++) {
+      const gain = RISING_SPARK_FULL_HALF_GAIN[half];
+      for (let col = 0; col < lengthCount; col++) {
+        const cell = (sizeIndex * 2 + half) * lengthCount + col;
+        const length = lengths[col];
+        bake.setTransform(dpr, 0, 0, dpr, (cell % perRow) * cellWidth, Math.floor(cell / perRow) * cellHeight);
+        for (let k = 1; k <= 3; k++) {
+          const s = half * 3 + k;
+          bake.strokeStyle = RISING_SPARK_STROKE_PREFIX + RISING_SPARK_SEGMENT_T[s] * gain + ')';
+          bake.lineWidth = sparkWidth * RISING_SPARK_SEGMENT_WIDTH[s];
+          bake.beginPath();
+          bake.moveTo(pad + (k - 1) / 3 * length, pad);
+          bake.lineTo(pad + k / 3 * length, pad);
+          bake.stroke();
+        }
+        if (half === 1) {
+          bake.fillStyle = 'rgba(255, 255, 255, ' + gain + ')';
+          bake.beginPath();
+          bake.arc(pad + length, pad, RISING_SPARK_HEAD_RADIUS * sizes[sizeIndex], 0, TAU);
+          bake.fill();
+        }
+      }
+    }
+  }
+  risingSparkFullAtlas = { canvas, width, height, dpr, pad, cellWidth, cellHeight, perRow,
+    lengthMin, lengthStep, lengthCount, lengths,
+    sizeMin: RISING_SPARK_SPRITE_SIZE_MIN, sizeStep: RISING_SPARK_FULL_SIZE_STEP, sizeCount, sizes };
+  return risingSparkFullAtlas;
+}
+
+// The context's transform when drawRisingSparks starts (the scene's device scale, or the alert hook's tile
+// translation on top of it). A recording mock without getTransform falls back to the scene scale.
+function risingSparkBaseTransform(context) {
+  const m = typeof context.getTransform === 'function' ? context.getTransform() : null;
+  return m && typeof m.a === 'number' ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f }
+    : { a: canvasScaleX, b: 0, c: 0, d: canvasScaleY, e: 0, f: 0 };
+}
+
+function drawRisingSparkFullSprites(context, atlas, base, trail, size, alpha) {
+  let sizeIndex = Math.round((size - atlas.sizeMin) / atlas.sizeStep);
+  sizeIndex = sizeIndex < 0 ? 0 : (sizeIndex >= atlas.sizeCount ? atlas.sizeCount - 1 : sizeIndex);
+  const drawWidth = atlas.cellWidth / atlas.dpr, drawHeight = atlas.cellHeight / atlas.dpr;
+  for (let half = 0; half < 2; half++) {
+    const o = half * 6;
+    const ax = trail[o], ay = trail[o + 1], bx = trail[o + 6], by = trail[o + 7];
+    const dx = bx - ax, dy = by - ay, length = Math.sqrt(dx * dx + dy * dy);
+    const cos = dx / length, sin = dy / length;
+    let col = Math.round((length - atlas.lengthMin) / atlas.lengthStep);
+    col = col < 0 ? 0 : (col >= atlas.lengthCount ? atlas.lengthCount - 1 : col);
+    const cell = (sizeIndex * 2 + half) * atlas.lengthCount + col;
+    const sx = (cell % atlas.perRow) * atlas.cellWidth, sy = Math.floor(cell / atlas.perRow) * atlas.cellHeight;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    context.setTransform(base.a * cos + base.c * sin, base.b * cos + base.d * sin,
+      base.c * cos - base.a * sin, base.d * cos - base.b * sin,
+      base.a * mx + base.c * my + base.e, base.b * mx + base.d * my + base.f);
+    // Half 1 is baked at half alpha: 2a in one stamp when that fits globalAlpha, else two stamps at a.
+    const stamps = half === 1 && alpha > 0.5 ? 2 : 1;
+    context.globalAlpha = half === 1 && stamps === 1 ? alpha * 2 : alpha;
+    for (let stamp = 0; stamp < stamps; stamp++) {
+      context.drawImage(atlas.canvas, sx, sy, atlas.cellWidth, atlas.cellHeight,
+        -(atlas.pad + atlas.lengths[col] / 2), -atlas.pad, drawWidth, drawHeight);
+    }
+  }
+}
+// Linux wallpaper optimization end (W1).
+
 function drawRisingSparks(context, timeSeconds) {
   const cullRadius = isMiniVariant ? Math.min(W, H) * MINI_EDGE_FADE_OUTER + RISING_SPARK_CULL_MARGIN_PX : Infinity;
   const fadeCx = W / 2, fadeCy = H / 2;
@@ -243,6 +354,11 @@ function drawRisingSparks(context, timeSeconds) {
   const atlas = isMiniVariant ? risingSparkAtlasFor(W, H, DPR) : null;
   let spriteState = false;
   // Linux mini optimization end (O1c P1).
+  // Linux wallpaper optimization begin (W1): the full variant stamps mature sparks from its own atlas.
+  const fullAtlas = isMiniVariant ? null : risingSparkFullAtlasFor(W, H, DPR);
+  const fullBase = fullAtlas === null ? null : risingSparkBaseTransform(context);
+  let fullSpriteState = false;
+  // Linux wallpaper optimization end (W1).
   context.save();
   context.globalCompositeOperation = 'lighter';
   context.lineCap = 'round';
@@ -260,6 +376,21 @@ function drawRisingSparks(context, timeSeconds) {
       risingSparkPositionInto(spark, sampleAge, W, H, trail, s * 2);
     }
     if (cullRadius !== Infinity && risingSparkTrailOutside(fadeCx, fadeCy, cullRadius)) continue;
+    // Linux wallpaper optimization begin (W1): two half sprites per mature spark; a young spark that follows
+    // sprites first restores the base transform and alpha its strokes expect.
+    if (fullAtlas !== null) {
+      if (spark.age >= RISING_SPARK_TRAIL_SECONDS) {
+        drawRisingSparkFullSprites(context, fullAtlas, fullBase, trail, spark.size, alpha);
+        fullSpriteState = true;
+        continue;
+      }
+      if (fullSpriteState) {
+        context.setTransform(fullBase.a, fullBase.b, fullBase.c, fullBase.d, fullBase.e, fullBase.f);
+        context.globalAlpha = 1;
+        fullSpriteState = false;
+      }
+    }
+    // Linux wallpaper optimization end (W1).
     // Linux mini optimization begin (O1c P1): two sprites per mature spark; a young spark that follows
     // sprites first restores the canvas transform and alpha its strokes expect.
     if (atlas !== null && spark.age >= RISING_SPARK_TRAIL_SECONDS) {
@@ -320,9 +451,38 @@ function drawBlueRingTint(context) {
   context.restore();
 }
 
+// Linux wallpaper optimization begin (W1): the blue layer's glow gradient only depends on (W, H, cx, cy); it is
+// created once per (context, geometry) and reused, like the vignette's (rings.js cachedVignetteGradient).
+let blueLayerGlowCache = { context: null, width: -1, height: -1, cx: NaN, cy: NaN, gradient: null };
+
+function cachedBlueLayerGlow(context, cx, cy) {
+  const cache = blueLayerGlowCache;
+  if (cache.context === context && cache.width === W && cache.height === H && cache.cx === cx && cache.cy === cy) return cache.gradient;
+  const radius = Math.max(W, H) * BLUE_LAYER_GLOW_RADIUS_FRACTION;
+  const glow = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
+  glow.addColorStop(0, BLUE_LAYER_GLOW_COLOR);
+  glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  blueLayerGlowCache = { context, width: W, height: H, cx, cy, gradient: glow };
+  return glow;
+}
+// Linux wallpaper optimization end (W1).
+
 // Blue wash over the finished monochrome composition: 'color' keeps each pixel's luminance but
 // takes the tint's hue/saturation, then a centered 'screen' glow brightens the middle.
 function drawBlueLayer(context, cx, cy) {
+  // Linux wallpaper optimization begin (W1): cached glow gradient (see cachedBlueLayerGlow).
+  if (typeof context.createRadialGradient === 'function') {
+    context.save();
+    context.globalCompositeOperation = 'color';
+    context.fillStyle = BLUE_LAYER_TINT_COLOR;
+    context.fillRect(0, 0, W, H);
+    context.globalCompositeOperation = 'screen';
+    context.fillStyle = cachedBlueLayerGlow(context, cx, cy);
+    context.fillRect(0, 0, W, H);
+    context.restore();
+    return;
+  }
+  // Linux wallpaper optimization end (W1).
   context.save();
   context.globalCompositeOperation = 'color';
   context.fillStyle = BLUE_LAYER_TINT_COLOR;
