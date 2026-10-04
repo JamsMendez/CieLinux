@@ -791,3 +791,7 @@ allowlist in `src/main.cpp`; anything else is blocked at runtime.
 | 2 | Done | Wallpaper mode (`scene`), live mode switch, pause under fullscreen windows, alerts in the wallpaper, Hyprland reconnect and query retry. |
 
 Out of scope by design: multi-monitor (see [Design notes](#design-notes)).
+
+<p align="right">
+  <a href="https://github.com/Gentleman-Programming/gentle-ai"><img src="https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png" alt="Built with Gentle-AI" width="180"></a>
+</p>
