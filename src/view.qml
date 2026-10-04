@@ -61,7 +61,7 @@ Item {
         // bright content in Qt WebEngine 6.11, so black is keyed out below instead.
         backgroundColor: "black"
         // Luminance key: alpha = max(r,g,b), premultiplied (see lumakey.frag). Mini
-        // only: the wallpaper is opaque on the background layer and needs no key.
+        // only: the wallpaper is opaque on the bottom layer and needs no key.
         layer.enabled: sceneRoot.sceneMode === "scene-mini"
         layer.effect: ShaderEffect { fragmentShader: "qrc:/lumakey.frag.qsb" }
         settings.localContentCanAccessRemoteUrls: false

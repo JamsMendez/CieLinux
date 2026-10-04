@@ -8,7 +8,7 @@ switches between them live.
 | Mode | `wallpaper-mode` | What you see |
 | --- | --- | --- |
 | Mini (default) | `scene-mini` | A 240 px always-on-top overlay at one of eight positions, see-through by brightness. |
-| Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the background layer, paused under fullscreen windows. |
+| Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the bottom layer, paused under fullscreen windows. |
 
 Choose **Frame rate ▸ 30 FPS or 60 FPS** in the tray. One persisted global cap
 (default: **30 FPS**) follows every scene and both modes. See [Frame rate](#frame-rate).
@@ -214,7 +214,7 @@ The socket is `$XDG_RUNTIME_DIR/cielinux/control.sock`:
 `wallpaper-mode = scene` (or `--mode scene`, or **Wallpaper mode ▸ Scene wallpaper** in
 the tray) shows the scene as the desktop wallpaper:
 
-- The full-size page (no mini variant) at the global frame-rate cap on the layer-shell **background**
+- The full-size page (no mini variant) at the global frame-rate cap on the layer-shell **bottom**
   layer of the selected output, anchored to every edge with exclusive zone -1, so it
   also extends under bars.
 - Opaque, ignores input, and has none of the mini's parts (no luminance key, no

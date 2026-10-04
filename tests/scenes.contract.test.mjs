@@ -377,7 +377,7 @@ test('host wiring: settings defaults under flags, live retarget, persist on read
     assert.match(prepare, /const QString scene = sceneHost\.scene\(\);/);
     assert.match(prepare, /const QUrl sceneUrl = sceneHost\.url\(\);/);
     assert.match(prepare, /const bool wallpaper = sceneHost\.mode\(\) == QStringLiteral\("scene"\);/);
-    assert.match(prepare, /layer->setLayer\(LayerShellQt::Window::LayerBackground\);/);
+    assert.match(prepare, /layer->setLayer\(LayerShellQt::Window::LayerBottom\);/);
     for (const edge of ['AnchorTop', 'AnchorBottom', 'AnchorLeft', 'AnchorRight'])
         assert.ok(prepare.slice(prepare.indexOf('if (wallpaper) {')).includes(edge), edge);
     assert.match(prepare, /layer->setExclusiveZone\(-1\);/);
