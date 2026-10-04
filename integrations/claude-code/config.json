@@ -1,0 +1,140 @@
+{
+  "enabled": true,
+  "server": {
+    "baseUrl": "http://127.0.0.1:43811",
+    "sceneRoute": "/v1/wallpaper/scene",
+    "alertsRoute": "/v1/alerts",
+    "token": "",
+    "tokenFile": "~/.local/state/cielinux/http.token"
+  },
+  "timing": {
+    "settleMs": 1500,
+    "minHoldMs": 4000,
+    "idleDelayMs": 8000
+  },
+  "scenes": {
+    "turn": {
+      "scene": "raphael",
+      "priority": 5
+    },
+    "idle": {
+      "scene": "idle"
+    },
+    "inheritAgentScene": true,
+    "rules": [
+      {
+        "kind": "agent",
+        "match": [
+          "review-*",
+          "jd-judge-*",
+          "sdd-propose",
+          "sdd-spec",
+          "sdd-design",
+          "sdd-tasks",
+          "sdd-verify",
+          "Plan"
+        ],
+        "scene": "raphael",
+        "priority": 40
+      },
+      {
+        "kind": "agent",
+        "match": [
+          "jd-fix-agent",
+          "sdd-apply",
+          "sdd-archive",
+          "sdd-init",
+          "sdd-onboard",
+          "statusline-setup"
+        ],
+        "scene": "processing",
+        "priority": 30
+      },
+      {
+        "kind": "agent",
+        "match": [
+          "Explore",
+          "sdd-explore",
+          "sdd-research",
+          "claude-code-guide"
+        ],
+        "scene": "explorer",
+        "priority": 20
+      },
+      {
+        "kind": "agent",
+        "match": [
+          "general-purpose",
+          "claude",
+          "*"
+        ],
+        "scene": "processing",
+        "priority": 25
+      },
+      {
+        "kind": "tool",
+        "match": [
+          "Agent",
+          "Task",
+          "AskUserQuestion",
+          "Skill",
+          "TodoWrite",
+          "mcp__*engram*",
+          "mcp__*mem_*"
+        ],
+        "scene": null,
+        "priority": 0
+      },
+      {
+        "kind": "tool",
+        "match": [
+          "Bash",
+          "BashOutput",
+          "Edit",
+          "MultiEdit",
+          "Write",
+          "NotebookEdit",
+          "PowerShell"
+        ],
+        "scene": "processing",
+        "priority": 30
+      },
+      {
+        "kind": "tool",
+        "match": [
+          "Read",
+          "Grep",
+          "Glob",
+          "LS",
+          "WebSearch",
+          "WebFetch",
+          "ToolSearch",
+          "mcp__codegraph__*",
+          "mcp__context7__*"
+        ],
+        "scene": "explorer",
+        "priority": 20
+      }
+    ]
+  },
+  "alerts": {
+    "warning": {
+      "enabled": true,
+      "duration": 5,
+      "cooldownMs": 10000,
+      "on": [
+        "AskUserQuestion",
+        "PermissionRequest"
+      ]
+    },
+    "failed": {
+      "enabled": true,
+      "duration": 8,
+      "batchMs": 3000,
+      "tools": [
+        "Bash"
+      ],
+      "ignoreInterrupted": true
+    }
+  }
+}
