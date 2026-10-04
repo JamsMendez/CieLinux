@@ -5,8 +5,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { SRC, source } from './paths.mjs';
 
@@ -90,6 +89,12 @@ static int parseCases() {
     custom.failedSound = "failed.m4a"; custom.warningSound = "warning.mp3";
     CHECK(Settings::parse(custom.serialize()) == custom);
     CHECK(Settings::parse(d.serialize()) == d);
+    CHECK(d.serialize().contains("\nframe-rate = 30\n"));
+    const Settings fast = Settings::parse("frame-rate = 60\n");
+    CHECK(fast != d && Settings::parse(fast.serialize()) == fast);
+    CHECK(Settings::parse("frame-rate = 60\nframe-rate = 45\n") == fast);
+    for (const char *bad : {"0", "45", "120", "+60", "060", "60.0", "60#comment", ""})
+        CHECK(Settings::parse(QStringLiteral("frame-rate = ") + bad) == d);
     for (const char *line : {"\nwallpaper-mode = scene-mini\n", "\nscene = processing\n", "\nhttp-server = on\n",
                              "\nhttp-server-port = 43811\n", "\nmini-position = top-right\n",
                              "\nalert-sounds = on\n", "\nfailed-sound = \n", "\nwarning-sound = \n"})
@@ -143,7 +148,7 @@ static int hostCases() {
         const QString scene = QString::fromUtf8(name);
         CHECK(isSwitchableScene(scene));
         CHECK(sceneUrlFor(scene, "scene-mini") == QUrl("qrc:/" + scene + "/index.html?variant=mini&fps=30"));
-        CHECK(sceneUrlFor(scene, "scene") == QUrl("qrc:/" + scene + "/index.html?fps=60"));
+        CHECK(sceneUrlFor(scene, "scene") == QUrl("qrc:/" + scene + "/index.html?fps=30"));
         CHECK(effectiveMode(scene, "scene") == "scene" && effectiveMode(scene, "scene-mini") == "scene-mini");
     }
     for (const char *name : {"other", "IDLE", "", "../idle", "idle ", "shared"})
@@ -179,10 +184,34 @@ static int hostCases() {
     CHECK(!host.setMode("wallpaper") && !host.setMode("SCENE") && !host.setMode(""));
     CHECK(host.setMode("scene-mini") && switched.size() == 3);
     CHECK(host.setMode("scene") && host.mode() == "scene");
-    CHECK(switched.last() == "qrc:/raphael/index.html?fps=60" && host.url() == QUrl(switched.last()));
-    CHECK(host.setScene("explorer") && switched.last() == "qrc:/explorer/index.html?fps=60");
+    CHECK(switched.last() == "qrc:/raphael/index.html?fps=30" && host.url() == QUrl(switched.last()));
+    CHECK(host.setScene("explorer") && switched.last() == "qrc:/explorer/index.html?fps=30");
     host.confirmReady();
     CHECK(saved.size() == 2 && saved[1] == qMakePair(QStringLiteral("explorer"), QStringLiteral("scene")));
+    CHECK(host.fps() == 30);
+    int rateSaves = 0, savedRate = 0, changes = 0, retargets = 0;
+    SceneHost rateHost("idle", "scene", 60, [&](const QUrl &url) {
+        ++retargets; if (url != rateHost.url()) return false; return allow;
+    }, [&](const QString &, const QString &, int fps) { ++rateSaves; savedRate = fps; });
+    QObject::connect(&rateHost, &SceneHost::changed, [&] { ++changes; });
+    CHECK(rateHost.fps() == 60 && rateHost.setFps(60) && retargets == 0);
+    CHECK(!rateHost.setFps(45) && !rateHost.setFps(0) && retargets == 0);
+    CHECK(rateHost.setFps(30) && changes == 1 && rateSaves == 0);
+    allow = false;
+    CHECK(!rateHost.setFps(60) && rateHost.fps() == 30 && changes == 1);
+    rateHost.confirmReady(); // Refusal must preserve the earlier pending save.
+    CHECK(rateSaves == 1 && savedRate == 30);
+    rateHost.confirmReady(); CHECK(rateSaves == 1);
+    allow = true;
+    CHECK(rateHost.setFps(60));
+    for (const QString &name : switchableScenes()) {
+        CHECK(rateHost.setScene(name) && rateHost.fps() == 60);
+        CHECK(rateHost.setMode("scene-mini") && rateHost.url() == sceneUrlFor(name, "scene-mini", 60));
+        CHECK(rateHost.setMode("scene") && rateHost.url() == sceneUrlFor(name, "scene", 60));
+    }
+    CHECK(rateSaves == 1);
+    rateHost.confirmReady(); CHECK(rateSaves == 2 && savedRate == 60);
+    CHECK(sceneUrlFor("idle", "scene", 45).isEmpty());
     std::cout << "HOST_OK";
     return 0;
 }
@@ -215,12 +244,42 @@ static int policyCases() {
         policy.consoleMessageFor(generation, 0, entry.message, 1, entry.source);
         CHECK(policy.ready());
     }
+    // Every canonical scene/mode/rate tuple is accepted, with strict negatives.
+    for (const QString &scene : switchableScenes()) {
+        const QString script = (scene == "idle" || scene == "explorer") ? "animate" : "main";
+        const QString source = "qrc:/" + scene + "/js/" + script + ".js";
+        const QString marker = "CIELINUX_SCENE_DRAW_READY_V1 " + scene;
+        for (const QString &variant : {QString(), QString("variant=mini&")}) {
+            for (int fps : {30, 60}) {
+                const QString url = "qrc:/" + scene + "/index.html?" + variant + "fps=" + QString::number(fps);
+                CHECK(policy.retarget(QUrl(url)));
+                const int gen = policy.generation();
+                policy.loadSucceededFor(gen - 1, QUrl(url));
+                policy.consoleMessageFor(gen - 1, 0, marker, 1, source);
+                CHECK(!policy.ready());
+                policy.loadSucceededFor(gen, QUrl(url));
+                policy.consoleMessageFor(gen, 0, marker + " ", 1, source);
+                policy.consoleMessageFor(gen, 0, marker, 1, source + "#fragment");
+                policy.consoleMessageFor(gen, 1, marker, 1, source);
+                CHECK(!policy.ready());
+                policy.consoleMessageFor(gen, 0, marker, 1, source);
+                CHECK(policy.ready());
+                for (const QString &bad : {url + "#fragment", url + "&extra=1",
+                     "qrc:/" + scene + "/index.html?fps=" + QString::number(fps) + "&variant=mini"}) {
+                    CHECK(policy.retarget(QUrl(bad)));
+                    policy.loadSucceededFor(policy.generation(), QUrl(bad));
+                    policy.consoleMessageFor(policy.generation(), 0, marker, 1, source);
+                    CHECK(!policy.ready());
+                }
+            }
+        }
+    }
     // Live switches never spend the (default single) recovery budget.
-    CHECK(rebuilt == 4);
+    const int beforeRecovery = rebuilt;
     policy.incident(policy.generation(), 0);
-    CHECK(rebuilt == 5 && !policy.closed());
+    CHECK(rebuilt == beforeRecovery + 1 && !policy.closed());
     policy.closeNormally();
-    CHECK(!policy.retarget(mini) && rebuilt == 5);
+    CHECK(!policy.retarget(mini) && rebuilt == beforeRecovery + 1);
     std::cout << "POLICY_OK";
     return 0;
 }
@@ -297,7 +356,7 @@ test('host wiring: settings defaults under flags, live retarget, persist on read
     assert.match(main, /SettingsFile::loadOrCreate\(settingsPath\)/);
     assert.match(main, /if \(!options\.sceneGiven\) options\.scene = stored\.settings\.scene;/);
     assert.match(main, /if \(!options\.modeGiven\) options\.mode = stored\.settings\.wallpaperMode;/);
-    assert.match(main, /const QUrl sceneUrl\(sceneUrlFor\(scene, mode\)\);/);
+    assert.match(main, /const QUrl sceneUrl\(sceneUrlFor\(scene, mode, stored\.settings\.frameRate\)\);/);
     // Settings are resolved before any Wayland/Qt side effect, after the closed parser.
     assert.ok(main.indexOf('parseHostOptions(argc, argv, options)') < main.indexOf('SettingsFile::loadOrCreate'));
     assert.ok(main.indexOf('SettingsFile::loadOrCreate') < main.indexOf('const QUrl sceneUrl'));

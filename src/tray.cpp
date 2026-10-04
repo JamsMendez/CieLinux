@@ -59,6 +59,19 @@ Tray::Tray(SceneHost &host, std::function<void()> exit, TraySounds sounds, QObje
         });
         sceneActions.append({scene, action});
     }
+    QMenu *fpsMenu = rootMenu->addMenu(QStringLiteral("Frame rate"));
+    auto *fpsGroup = new QActionGroup(fpsMenu);
+    fpsGroup->setExclusive(true);
+    for (int fps : {30, 60}) {
+        QAction *action = fpsMenu->addAction(QString::number(fps) + QStringLiteral(" FPS"));
+        action->setCheckable(true);
+        fpsGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, fps] {
+            guarded("frame-rate", [this, fps] { this->host.setFps(fps); });
+            refreshChecks();
+        });
+        fpsActions.append({fps, action});
+    }
     // Sound group (A5, CielWin MenuOrder/SoundEntryLabel): the imports always, each
     // remove only while its kind has a sound, the toggle only while either has one.
     rootMenu->addSeparator();
@@ -97,6 +110,7 @@ Tray::Tray(SceneHost &host, std::function<void()> exit, TraySounds sounds, QObje
     connect(rootMenu.get(), &QMenu::aboutToShow, this, &Tray::refreshChecks);
     connect(modeMenu, &QMenu::aboutToShow, this, &Tray::refreshChecks);
     connect(sceneMenu, &QMenu::aboutToShow, this, &Tray::refreshChecks);
+    connect(fpsMenu, &QMenu::aboutToShow, this, &Tray::refreshChecks);
     connect(&host, &SceneHost::changed, this, &Tray::refreshChecks);
     refreshChecks();
 
@@ -161,6 +175,8 @@ void Tray::activate(QSystemTrayIcon::ActivationReason) {
 }
 
 void Tray::refreshChecks() {
+    for (const auto &[fps, action] : std::as_const(fpsActions))
+        action->setChecked(fps == host.fps());
     const QString currentMode = host.mode();
     for (const auto &[mode, action] : std::as_const(modeActions))
         action->setChecked(mode == currentMode);

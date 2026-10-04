@@ -119,6 +119,7 @@ int main(int argc, char **argv) {
     Tray tray(host, [] {}, sounds);
     // Menu state changes while no tray host is around must show up once one appears.
     host.setScene("raphael");
+    host.setFps(60);
     std::cout << "LATE_READY shown=" << tray.shown() << std::endl;
     return app.exec();
 }
@@ -157,12 +158,13 @@ int main(int argc, char **argv) {
     // Root order (CielWin MenuOrder): Wallpaper mode submenu (B1), Scene submenu,
     // separator, the A5 sound group (5 items, see sounds.contract.test.mjs), separator, Exit.
     const QList<QAction *> root = tray.menu()->actions();
-    CHECK(root.size() == 10);
+    CHECK(root.size() == 11);
     CHECK(root[0]->text() == "Wallpaper mode" && root[0]->menu() && root[0]->isEnabled() && root[0]->isVisible());
     CHECK(root[1]->text() == "Scene" && root[1]->menu());
-    CHECK(root[2]->isSeparator());
-    CHECK(root[8]->isSeparator());
-    CHECK(root[9]->text() == "Exit" && !root[9]->isCheckable());
+    CHECK(root[2]->text() == "Frame rate" && root[2]->menu());
+    CHECK(root[3]->isSeparator());
+    CHECK(root[9]->isSeparator());
+    CHECK(root[10]->text() == "Exit" && !root[10]->isCheckable());
     QMenu *modes = root[0]->menu();
     QMenu *scenes = root[1]->menu();
     QStringList labels;
@@ -218,11 +220,11 @@ int main(int argc, char **argv) {
     const int beforeModes = switched.size();
     sceneAction(modes, "Scene wallpaper")->trigger();
     CHECK(host.mode() == "scene" && host.scene() == "explorer");
-    CHECK(switched.size() == beforeModes + 1 && switched.last() == "qrc:/explorer/index.html?fps=60");
+    CHECK(switched.size() == beforeModes + 1 && switched.last() == "qrc:/explorer/index.html?fps=30");
     CHECK(checkedLabels(modes) == "Scene wallpaper");
     // A scene switch keeps the mode (full-size page, no mini variant).
     sceneAction(scenes, "Idle")->trigger();
-    CHECK(host.mode() == "scene" && switched.last() == "qrc:/idle/index.html?fps=60");
+    CHECK(host.mode() == "scene" && switched.last() == "qrc:/idle/index.html?fps=30");
     // Re-selecting the current mode does not retarget.
     sceneAction(modes, "Scene wallpaper")->trigger();
     CHECK(switched.size() == beforeModes + 2);
@@ -256,7 +258,27 @@ int main(int argc, char **argv) {
     // Left click (Trigger) does nothing; Exit calls the quit path once.
     tray.activate(QSystemTrayIcon::Trigger);
     CHECK(exits == 0 && host.scene() == "idle");
-    root[9]->trigger();
+    QMenu *rates = root[2]->menu();
+    CHECK(rates->actions().size() == 2 && checkedLabels(rates) == "30 FPS");
+    for (QAction *action : rates->actions())
+        CHECK(action->isCheckable() && action->actionGroup()->isExclusive());
+    sceneAction(rates, "60 FPS")->trigger();
+    CHECK(host.fps() == 60 && checkedLabels(rates) == "60 FPS");
+    allow = false;
+    sceneAction(rates, "30 FPS")->trigger();
+    CHECK(host.fps() == 60 && checkedLabels(rates) == "60 FPS");
+    allow = true;
+    sceneAction(rates, "30 FPS")->trigger();
+    CHECK(host.fps() == 30 && checkedLabels(rates) == "30 FPS");
+    const int beforeRateNoop = switched.size();
+    sceneAction(rates, "30 FPS")->trigger();
+    CHECK(switched.size() == beforeRateNoop);
+    host.setFps(60);
+    CHECK(checkedLabels(rates) == "60 FPS");
+    sceneAction(rates, "30 FPS")->setChecked(true);
+    emit rates->aboutToShow();
+    CHECK(checkedLabels(rates) == "60 FPS");
+    root[10]->trigger();
     CHECK(exits == 1);
     std::cout << "TRAY_OK";
     return 0;
@@ -386,6 +408,8 @@ const item = (layout, label) => layout.match(new RegExp(`\\{[^{}]*'label': <'${l
 const registrations = proc => [...proc.out.matchAll(/REGISTERED (\S+) SENDER (\S+)/g)].map(m => ({ service: m[1], sender: m[2] }));
 
 function assertMenuState(layout) {
+    assert.match(item(layout, '60 FPS'), /'toggle-state': <1>/, layout);
+    assert.match(item(layout, '30 FPS'), /'toggle-state': <0>/, layout);
     // Scene radio follows SceneHost (switched to Raphael while no host was around).
     assert.match(item(layout, 'Raphael'), /'toggle-state': <1>/, layout);
     assert.match(item(layout, 'Idle'), /'toggle-state': <0>/, layout);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { source } from './paths.mjs';
 
 const read = name => readFileSync(source(name), 'utf8');
 const html = read('processing/index.html');
@@ -215,8 +215,11 @@ test('selector is closed before Qt initialization; navigation differs from resou
     assert.match(help, /argc == 2 && std::strcmp\(argv\[1\], "--help"\) == 0/);
     assert.match(help, /return 0/);
     // A1: the URL table moved to scene-host.cpp; main.cpp resolves it before Qt initialization.
-    assert.match(before, /const QUrl sceneUrl\(sceneUrlFor\(scene, mode\)\);/);
-    assert.match(read('scene-host.cpp'), /\{"processing", "qrc:\/processing\/index.html\?variant=mini&fps=30", "qrc:\/processing\/index.html\?fps=60"\}/);
+    assert.match(before, /const QUrl sceneUrl\(sceneUrlFor\(scene, mode, stored\.settings\.frameRate\)\);/);
+    for (const fps of [30, 60]) {
+        assert.ok(read('scene-host.cpp').includes(`"qrc:/processing/index.html?variant=mini&fps=${fps}"`));
+        assert.ok(read('scene-host.cpp').includes(`"qrc:/processing/index.html?fps=${fps}"`));
+    }
     assert.match(read('policy.h'), /url.toEncoded\(\) == selectedUrl/);
     assert.match(cpp, /encoded != selectedUrl && !resourceUrls.contains\(encoded\)/);
     // Model only the literal encoded comparison contract, not Qt URL parsing at runtime.

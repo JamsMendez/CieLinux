@@ -21,6 +21,7 @@ struct Settings {
     QString wallpaperMode = QStringLiteral("scene-mini"); // scene-mini | scene
     QString scene = QStringLiteral("processing");        // processing | explorer | idle | raphael
     QString miniPosition = QStringLiteral("top-right");  // four corners + four side midpoints
+    int frameRate = 30;                          // frame-rate: global 30 | 60
     bool alertSoundsEnabled = true;              // alert-sounds
     QString failedSound, warningSound;           // bare .wav/.mp3/.m4a file name; empty = silent
 

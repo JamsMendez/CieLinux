@@ -104,6 +104,9 @@ Settings Settings::parse(const QString &content) {
             if (auto v = readName(value, miniPositionNames)) miniPosition = v;
         } else if (key == QLatin1String("mini-corner")) {
             if (auto v = readName(value, miniPositionNames)) legacyMiniPosition = v;
+        } else if (key == QLatin1String("frame-rate")) {
+            if (value == QLatin1String("30")) result.frameRate = 30;
+            else if (value == QLatin1String("60")) result.frameRate = 60;
         } else if (key == QLatin1String("alert-sounds")) {
             if (auto v = readFlag(value)) result.alertSoundsEnabled = *v;
         } else if (key == QLatin1String("failed-sound")) {
@@ -140,6 +143,10 @@ QString Settings::serialize() const {
         QStringLiteral("# Updated whenever the scene is switched, so it survives restarts."),
         QStringLiteral("scene = ") + scene,
         QString(),
+        QStringLiteral("# frame-rate: global cap, 30 (default) or 60 FPS, shared by all scenes and modes."),
+        QStringLiteral("# The tray's Frame rate menu changes it live by rebuilding the scene."),
+        QStringLiteral("frame-rate = ") + QString::number(frameRate),
+        QString(),
         QStringLiteral("# mini-position: where the `scene-mini` window sits: a corner (`top-left`,"),
         QStringLiteral("# `top-right` (default), `bottom-left`, `bottom-right`) or a side midpoint"),
         QStringLiteral("# (`top-center`, `right-center`, `bottom-center`, `left-center`)."),
@@ -161,7 +168,7 @@ QString Settings::serialize() const {
 bool Settings::operator==(const Settings &o) const {
     return httpServerEnabled == o.httpServerEnabled && httpServerPort == o.httpServerPort &&
            wallpaperMode == o.wallpaperMode && scene == o.scene && miniPosition == o.miniPosition &&
-           alertSoundsEnabled == o.alertSoundsEnabled && failedSound == o.failedSound &&
+           frameRate == o.frameRate && alertSoundsEnabled == o.alertSoundsEnabled && failedSound == o.failedSound &&
            warningSound == o.warningSound;
 }
 

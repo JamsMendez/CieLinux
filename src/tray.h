@@ -27,7 +27,7 @@ struct TraySounds {
 
 // The tray icon (StatusNotifierItem through Qt's D-Bus tray; Waybar shows it) and
 // its menu, CielWin's TrayIconHost order: Wallpaper mode ▸ (Scene wallpaper, Mini
-// window), Scene ▸, separator, sound group (imports, removes, "Alert sounds" toggle),
+// window), Scene ▸, Frame rate ▸ (30 FPS, 60 FPS), separator, sound group (imports, removes, "Alert sounds" toggle),
 // separator, Exit. It owns no state: the checks and the shown sound entries are re-read
 // from SceneHost and TraySounds when a menu opens (the scene also changes over HTTP),
 // and every mode or scene click goes through SceneHost::setMode / setScene. Left click
@@ -62,6 +62,7 @@ private:
     std::function<void()> exitHost;
     std::unique_ptr<QMenu> rootMenu;
     QActionGroup *modeGroup = nullptr, *sceneGroup = nullptr;
+    QList<QPair<int, QAction *>> fpsActions;
     QList<QPair<QString, QAction *>> modeActions;
     QList<QPair<QString, QAction *>> sceneActions;
     TraySounds sounds;

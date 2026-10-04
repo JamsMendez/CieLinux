@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { source } from './paths.mjs';
 
 const read = name => readFileSync(source(name), 'utf8');
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -195,7 +195,10 @@ test('host selector, allowlist, navigation, readiness and diagnostics accept exp
     const cpp = read('main.cpp');
     assert.match(cpp, /--scene processing\|explorer\|idle\|raphael\b/);
     // A1: the closed scene -> URL table (mini and full-size wallpaper) lives in scene-host.cpp.
-    assert.match(read('scene-host.cpp'), /\{"explorer", "qrc:\/explorer\/index.html\?variant=mini&fps=30", "qrc:\/explorer\/index.html\?fps=60"\}/);
+    for (const fps of [30, 60]) {
+        assert.ok(read('scene-host.cpp').includes(`"qrc:/explorer/index.html?variant=mini&fps=${fps}"`));
+        assert.ok(read('scene-host.cpp').includes(`"qrc:/explorer/index.html?fps=${fps}"`));
+    }
     const resources = [...cpp.match(/resourceUrls = \{([\s\S]*?)\};/)[1].matchAll(/"qrc:\/([^"]+)"/g)].map(m => m[1]);
     assert.deepEqual(resources.filter(url => url.startsWith('explorer/')), manifest);
     assert.equal(new Set(resources).size, resources.length);
@@ -211,7 +214,7 @@ test('host selector, allowlist, navigation, readiness and diagnostics accept exp
         'qrc:/explorer/js/../js/main.js', 'qrc:/explorer/index.html?fps=30&variant=mini', `${selected}#x`])
         assert.ok(!resourceAllowed(url), url);
     const policy = read('policy.h');
-    assert.match(policy, /selectedUrl == "qrc:\/explorer\/index.html\?variant=mini&fps=30" &&\s*source == QStringLiteral\("qrc:\/explorer\/js\/animate.js"\) &&\s*message == QStringLiteral\("CIELINUX_SCENE_DRAW_READY_V1 explorer"\)/);
+    assert.match(policy, /selectedUrl == "qrc:\/explorer\/index.html\?variant=mini&fps=30" \|\|\s*selectedUrl == "qrc:\/explorer\/index.html\?variant=mini&fps=60" \|\|\s*selectedUrl == "qrc:\/explorer\/index.html\?fps=30" \|\|\s*selectedUrl == "qrc:\/explorer\/index.html\?fps=60"\) &&\s*source == QStringLiteral\("qrc:\/explorer\/js\/animate.js"\) &&\s*message == QStringLiteral\("CIELINUX_SCENE_DRAW_READY_V1 explorer"\)/);
     const safe = read('diagnostics.h');
     for (const file of manifest) assert.ok(safe.includes(`"qrc:/${file}"`), file);
 });

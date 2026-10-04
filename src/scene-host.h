@@ -6,12 +6,10 @@
 #include <QUrl>
 #include <functional>
 
-// The closed scene/mode -> page URL table. `scene-mini` is the small keyed
-// window (`?variant=mini&fps=30`); `scene` is the full-size wallpaper page
-// (no variant, 60 fps, as CielWin's WallpaperSceneSurface), shown on the
-// layer-shell background layer (B1).
-// Returns an empty URL for anything outside the table.
-QUrl sceneUrlFor(const QString &scene, const QString &mode);
+// Closed scene/mode/rate -> page URL matrix. Mini is a small keyed window;
+// scene is the full-size layer-shell wallpaper. One global rate follows both.
+// Returns an empty URL for anything outside the matrix.
+QUrl sceneUrlFor(const QString &scene, const QString &mode, int fps = 30);
 // The four CielWin scenes, the only names setScene() and settings accept.
 bool isSwitchableScene(const QString &scene);
 // The same four names in table (CielWin declaration) order, for the tray menu.
@@ -27,15 +25,21 @@ class SceneHost final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString scene READ scene NOTIFY changed)
     Q_PROPERTY(QString mode READ mode NOTIFY changed)
+    Q_PROPERTY(int fps READ fps NOTIFY changed)
 public:
     using Switcher = std::function<bool(const QUrl &)>;
     using Persister = std::function<void(const QString &scene, const QString &mode)>;
     // `scene`/`mode` must already be validated (sceneUrlFor non-empty).
     SceneHost(const QString &scene, const QString &mode, Switcher switcher, Persister persister,
               QObject *parent = nullptr);
+    using RatePersister = std::function<void(const QString &scene, const QString &mode, int fps)>;
+    SceneHost(const QString &scene, const QString &mode, int fps, Switcher switcher,
+              RatePersister persister, QObject *parent = nullptr);
+    int fps() const { return currentFps; }
+    Q_INVOKABLE bool setFps(int fps);
     QString scene() const { return currentScene; }
     QString mode() const { return currentMode; }
-    QUrl url() const { return sceneUrlFor(currentScene, currentMode); }
+    QUrl url() const { return sceneUrlFor(currentScene, currentMode, currentFps); }
     // True when the scene is (or is now being) shown; false for a name outside
     // the allowlist or a refused switch, which leaves the current target as is.
     Q_INVOKABLE bool setScene(const QString &name);
@@ -48,9 +52,10 @@ signals:
     void changed();
 private:
     // By value: callers pass the current members themselves.
-    bool switchTo(QString scene, QString mode);
+    bool switchTo(QString scene, QString mode, int fps);
     QString currentScene, currentMode;
     Switcher switcher;
-    Persister persister;
+    int currentFps = 30;
+    RatePersister persister;
     bool persistPending = false;
 };

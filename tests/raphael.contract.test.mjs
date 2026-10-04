@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { source } from './paths.mjs';
 
 const read = name => readFileSync(source(name), 'utf8');
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -215,7 +215,10 @@ test('host selector, allowlist, navigation and readiness accept raphael and stay
     const cpp = read('main.cpp');
     assert.match(cpp, /--scene processing\|explorer\|idle\|raphael\b/);
     // A1: the closed scene -> URL table (mini and full-size wallpaper) lives in scene-host.cpp.
-    assert.match(read('scene-host.cpp'), /\{"raphael", "qrc:\/raphael\/index.html\?variant=mini&fps=30", "qrc:\/raphael\/index.html\?fps=60"\}/);
+    for (const fps of [30, 60]) {
+        assert.ok(read('scene-host.cpp').includes(`"qrc:/raphael/index.html?variant=mini&fps=${fps}"`));
+        assert.ok(read('scene-host.cpp').includes(`"qrc:/raphael/index.html?fps=${fps}"`));
+    }
     const resources = [...cpp.match(/resourceUrls = \{([\s\S]*?)\};/)[1].matchAll(/"qrc:\/([^"]+)"/g)].map(m => m[1]);
     assert.deepEqual(resources.filter(url => url.startsWith('raphael/')), manifest);
     assert.equal(new Set(resources).size, resources.length);
@@ -231,7 +234,7 @@ test('host selector, allowlist, navigation and readiness accept raphael and stay
         'qrc:/raphael/index.html?fps=30&variant=mini', `${selected}#x`])
         assert.ok(!resourceAllowed(url), url);
     const policy = read('policy.h');
-    assert.match(policy, /selectedUrl == "qrc:\/raphael\/index.html\?variant=mini&fps=30" &&\s*source == QStringLiteral\("qrc:\/raphael\/js\/main.js"\) &&\s*message == QStringLiteral\("CIELINUX_SCENE_DRAW_READY_V1 raphael"\)/);
+    assert.match(policy, /selectedUrl == "qrc:\/raphael\/index.html\?variant=mini&fps=30" \|\|\s*selectedUrl == "qrc:\/raphael\/index.html\?variant=mini&fps=60" \|\|\s*selectedUrl == "qrc:\/raphael\/index.html\?fps=30" \|\|\s*selectedUrl == "qrc:\/raphael\/index.html\?fps=60"\) &&\s*source == QStringLiteral\("qrc:\/raphael\/js\/main.js"\) &&\s*message == QStringLiteral\("CIELINUX_SCENE_DRAW_READY_V1 raphael"\)/);
 });
 
 test('synthetic transport probes occur once at initialization, separately from actual errors', () => {

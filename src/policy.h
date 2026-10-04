@@ -193,30 +193,29 @@ private:
     bool drawReport(int level, const QString &message, const QString &source) const {
         // Raw exact comparisons, never diagnostic canonicalization or truncation.
         if (level != 0) return false; // WebEngine InfoMessageLevel (console.log).
-        return (selectedUrl == "qrc:/processing/index.html?variant=mini&fps=30" &&
+        return ((selectedUrl == "qrc:/processing/index.html?variant=mini&fps=30" ||
+                 selectedUrl == "qrc:/processing/index.html?variant=mini&fps=60" ||
+                 selectedUrl == "qrc:/processing/index.html?fps=30" ||
+                 selectedUrl == "qrc:/processing/index.html?fps=60") &&
                 source == QStringLiteral("qrc:/processing/js/main.js") &&
                 message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 processing")) ||
-               (selectedUrl == "qrc:/raphael/index.html?variant=mini&fps=30" &&
+               ((selectedUrl == "qrc:/raphael/index.html?variant=mini&fps=30" ||
+                 selectedUrl == "qrc:/raphael/index.html?variant=mini&fps=60" ||
+                 selectedUrl == "qrc:/raphael/index.html?fps=30" ||
+                 selectedUrl == "qrc:/raphael/index.html?fps=60") &&
                 source == QStringLiteral("qrc:/raphael/js/main.js") &&
                 message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 raphael")) ||
                // idle and explorer run their frame loop in js/animate.js; main.js only resizes and starts it.
-               (selectedUrl == "qrc:/idle/index.html?variant=mini&fps=30" &&
+               ((selectedUrl == "qrc:/idle/index.html?variant=mini&fps=30" ||
+                 selectedUrl == "qrc:/idle/index.html?variant=mini&fps=60" ||
+                 selectedUrl == "qrc:/idle/index.html?fps=30" ||
+                 selectedUrl == "qrc:/idle/index.html?fps=60") &&
                 source == QStringLiteral("qrc:/idle/js/animate.js") &&
                 message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 idle")) ||
-               (selectedUrl == "qrc:/explorer/index.html?variant=mini&fps=30" &&
-                source == QStringLiteral("qrc:/explorer/js/animate.js") &&
-                message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 explorer")) ||
-               // Full-size wallpaper variants (scene-host.cpp) report from the same scripts.
-               (selectedUrl == "qrc:/processing/index.html?fps=60" &&
-                source == QStringLiteral("qrc:/processing/js/main.js") &&
-                message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 processing")) ||
-               (selectedUrl == "qrc:/raphael/index.html?fps=60" &&
-                source == QStringLiteral("qrc:/raphael/js/main.js") &&
-                message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 raphael")) ||
-               (selectedUrl == "qrc:/idle/index.html?fps=60" &&
-                source == QStringLiteral("qrc:/idle/js/animate.js") &&
-                message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 idle")) ||
-               (selectedUrl == "qrc:/explorer/index.html?fps=60" &&
+               ((selectedUrl == "qrc:/explorer/index.html?variant=mini&fps=30" ||
+                 selectedUrl == "qrc:/explorer/index.html?variant=mini&fps=60" ||
+                 selectedUrl == "qrc:/explorer/index.html?fps=30" ||
+                 selectedUrl == "qrc:/explorer/index.html?fps=60") &&
                 source == QStringLiteral("qrc:/explorer/js/animate.js") &&
                 message == QStringLiteral("CIELINUX_SCENE_DRAW_READY_V1 explorer"));
     }

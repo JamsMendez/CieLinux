@@ -3,13 +3,17 @@
 #include <utility>
 
 namespace {
-struct SceneEntry { const char *name, *mini, *full; };
+struct SceneEntry { const char *name, *mini30, *mini60, *full30, *full60; };
 // Literal URLs only: no scene name is ever concatenated into a URL.
 constexpr SceneEntry sceneTable[] = {
-    {"processing", "qrc:/processing/index.html?variant=mini&fps=30", "qrc:/processing/index.html?fps=60"},
-    {"explorer", "qrc:/explorer/index.html?variant=mini&fps=30", "qrc:/explorer/index.html?fps=60"},
-    {"idle", "qrc:/idle/index.html?variant=mini&fps=30", "qrc:/idle/index.html?fps=60"},
-    {"raphael", "qrc:/raphael/index.html?variant=mini&fps=30", "qrc:/raphael/index.html?fps=60"},
+    {"processing", "qrc:/processing/index.html?variant=mini&fps=30", "qrc:/processing/index.html?variant=mini&fps=60",
+     "qrc:/processing/index.html?fps=30", "qrc:/processing/index.html?fps=60"},
+    {"explorer", "qrc:/explorer/index.html?variant=mini&fps=30", "qrc:/explorer/index.html?variant=mini&fps=60",
+     "qrc:/explorer/index.html?fps=30", "qrc:/explorer/index.html?fps=60"},
+    {"idle", "qrc:/idle/index.html?variant=mini&fps=30", "qrc:/idle/index.html?variant=mini&fps=60",
+     "qrc:/idle/index.html?fps=30", "qrc:/idle/index.html?fps=60"},
+    {"raphael", "qrc:/raphael/index.html?variant=mini&fps=30", "qrc:/raphael/index.html?variant=mini&fps=60",
+     "qrc:/raphael/index.html?fps=30", "qrc:/raphael/index.html?fps=60"},
 };
 
 const SceneEntry *entryFor(const QString &scene) {
@@ -19,23 +23,21 @@ const SceneEntry *entryFor(const QString &scene) {
 }
 } // namespace
 
-QUrl sceneUrlFor(const QString &scene, const QString &mode) {
+QUrl sceneUrlFor(const QString &scene, const QString &mode, int fps) {
     const SceneEntry *entry = entryFor(scene);
-    if (!entry) return {};
-    if (mode == QStringLiteral("scene-mini")) return QUrl(QString::fromLatin1(entry->mini));
-    if (mode == QStringLiteral("scene") && entry->full) return QUrl(QString::fromLatin1(entry->full));
+    if (!entry || (fps != 30 && fps != 60)) return {};
+    if (mode == QStringLiteral("scene-mini")) return QUrl(QString::fromLatin1(fps == 30 ? entry->mini30 : entry->mini60));
+    if (mode == QStringLiteral("scene")) return QUrl(QString::fromLatin1(fps == 30 ? entry->full30 : entry->full60));
     return {};
 }
 
 bool isSwitchableScene(const QString &scene) {
-    const SceneEntry *entry = entryFor(scene);
-    return entry && entry->full;
+    return entryFor(scene) != nullptr;
 }
 
 QStringList switchableScenes() {
     QStringList names;
-    for (const SceneEntry &entry : sceneTable)
-        if (entry.full) names << QString::fromLatin1(entry.name);
+    for (const SceneEntry &entry : sceneTable) names << QString::fromLatin1(entry.name);
     return names;
 }
 
@@ -45,30 +47,43 @@ QString effectiveMode(const QString &scene, const QString &mode) {
 
 SceneHost::SceneHost(const QString &scene, const QString &mode, Switcher switcher,
                      Persister persister, QObject *parent)
-    : QObject(parent), currentScene(scene), currentMode(mode),
-      switcher(std::move(switcher)), persister(std::move(persister)) {}
+    : SceneHost(scene, mode, 30, std::move(switcher),
+                [persister = std::move(persister)](const QString &scene, const QString &mode, int) {
+                    if (persister) persister(scene, mode);
+                }, parent) {}
+
+SceneHost::SceneHost(const QString &scene, const QString &mode, int fps, Switcher switcher,
+                     RatePersister persister, QObject *parent)
+    : QObject(parent), currentScene(scene), currentMode(mode), switcher(std::move(switcher)),
+      currentFps(fps == 60 ? 60 : 30), persister(std::move(persister)) {}
 
 bool SceneHost::setScene(const QString &name) {
     if (!isSwitchableScene(name)) return false;
-    return switchTo(name, currentMode);
+    return switchTo(name, currentMode, currentFps);
 }
 
 bool SceneHost::setMode(const QString &mode) {
     if (mode != QStringLiteral("scene") && mode != QStringLiteral("scene-mini")) return false;
-    return switchTo(currentScene, mode);
+    return switchTo(currentScene, mode, currentFps);
 }
 
-bool SceneHost::switchTo(QString scene, QString mode) {
-    const QUrl target = sceneUrlFor(scene, mode);
+bool SceneHost::setFps(int fps) {
+    return switchTo(currentScene, currentMode, fps);
+}
+
+bool SceneHost::switchTo(QString scene, QString mode, int fps) {
+    const QUrl target = sceneUrlFor(scene, mode, fps);
     if (target.isEmpty()) return false;
-    if (scene == currentScene && mode == currentMode) return true;
-    // Publish the new target first: the attachment rebuilt by the switcher reads
-    // it (on a later event-loop turn). Roll back if the switch was refused.
+    if (scene == currentScene && mode == currentMode && fps == currentFps) return true;
+    // Publish before retarget: reconstruction reads the authoritative target.
+    // A refused retarget preserves both the target and any earlier pending save.
     QString oldScene = std::exchange(currentScene, std::move(scene));
     QString oldMode = std::exchange(currentMode, std::move(mode));
+    const int oldFps = std::exchange(currentFps, fps);
     if (!switcher || !switcher(target)) {
         currentScene = std::move(oldScene);
         currentMode = std::move(oldMode);
+        currentFps = oldFps;
         return false;
     }
     persistPending = true;
@@ -79,5 +94,5 @@ bool SceneHost::switchTo(QString scene, QString mode) {
 void SceneHost::confirmReady() {
     if (!persistPending) return;
     persistPending = false;
-    if (persister) persister(currentScene, currentMode);
+    if (persister) persister(currentScene, currentMode, currentFps);
 }

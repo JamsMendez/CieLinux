@@ -67,7 +67,9 @@ test('mode switch replaces the alert surface; the wallpaper shows alerts unless 
     // pending for the old page is dropped; one trace line.
     const hook = main.slice(main.indexOf('QString alertSurfaceMode'), main.indexOf('alertTick.start(400);'));
     assert.match(hook, /QObject::connect\(&sceneHost, &SceneHost::changed, &alertDriver, \[&\] \{/);
-    assert.match(hook, /if \(sceneHost\.mode\(\) == alertSurfaceMode\) return;/);
+    assert.match(hook, /if \(sceneHost\.mode\(\) != alertSurfaceMode\) \{/);
+    assert.ok(hook.indexOf('alertBridge.attach(policy.generation());') < hook.indexOf('alertBridge.hide();'));
+    assert.ok(hook.indexOf('alertDriver.surfaceReplaced();') < hook.indexOf('if (sceneHost.mode() != alertSurfaceMode)'));
     assert.ok(hook.indexOf('alertBridge.hide();') < hook.indexOf('alertDriver.surfaceReplaced();'));
     assert.match(hook, /qInfo\("CIELINUX_MODE switched mode=%s", qPrintable\(alertSurfaceMode\)\);/);
 });

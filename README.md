@@ -7,9 +7,11 @@ switches between them live.
 
 | Mode | `wallpaper-mode` | What you see |
 | --- | --- | --- |
-| Mini (default) | `scene-mini` | A 240 px always-on-top overlay at one of eight positions, 30 fps, see-through by brightness. |
-| Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the background layer, 60 fps, paused under fullscreen windows. |
+| Mini (default) | `scene-mini` | A 240 px always-on-top overlay at one of eight positions, see-through by brightness. |
+| Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the background layer, paused under fullscreen windows. |
 
+Choose **Frame rate ▸ 30 FPS or 60 FPS** in the tray. One persisted global cap
+(default: **30 FPS**) follows every scene and both modes. See [Frame rate](#frame-rate).
 Alerts (`POST /v1/alerts`) and alert sounds work the same way in both modes.
 
 The host is a small Qt 6 / QtWebEngine program. It draws the scene page into a
@@ -119,9 +121,25 @@ journald-enabled Qt would otherwise send its messages straight to the journal wh
 is no terminal. Under the user unit that stream lands in the journal
 (`journalctl --user -u cielinux`). See [Log reference](#log-reference).
 
+## Frame rate
+
+Open the tray's **Frame rate ▸** submenu and choose **30 FPS** or **60 FPS**.
+The checked item follows the host's current target, including refused clicks and
+tray-host restarts. Re-selecting the current rate does nothing.
+
+- `frame-rate = 30` is the default; `60` is the only other accepted value.
+- This is one global preference, not a per-scene or per-mode setting. Scene and
+  wallpaper/mini switches keep it; no HTTP route or CLI flag changes it.
+- Changing the rate rebuilds the page and may reset its animation. Active alerts
+  continue for their remaining duration without another sound, and fullscreen
+  wallpaper pause is preserved.
+- The selected rate is saved only after the replacement page confirms readiness.
+  An unreadable settings file is never overwritten. FPS is a cap, not a guarantee
+  of display cadence: scene cost, compositor refresh and load still matter.
+
 ## Mini mode
 
-The mini window is 240 px square, drawn at 30 fps on the layer-shell top layer. It is
+The mini window is 240 px square, drawn at the global frame-rate cap on the layer-shell top layer. It is
 see-through by brightness (a luminance key makes black transparent), so only the scene
 shows over your desktop. It is never covered by other windows and never pauses.
 
@@ -196,7 +214,7 @@ The socket is `$XDG_RUNTIME_DIR/cielinux/control.sock`:
 `wallpaper-mode = scene` (or `--mode scene`, or **Wallpaper mode ▸ Scene wallpaper** in
 the tray) shows the scene as the desktop wallpaper:
 
-- The full-size page (no mini variant) at 60 fps on the layer-shell **background**
+- The full-size page (no mini variant) at the global frame-rate cap on the layer-shell **background**
   layer of the selected output, anchored to every edge with exclusive zone -1, so it
   also extends under bars.
 - Opaque, ignores input, and has none of the mini's parts (no luminance key, no
@@ -277,6 +295,7 @@ your host's menu gesture) opens the menu:
 | --- | --- |
 | **Wallpaper mode ▸** Scene wallpaper, Mini window | Switches the mode live (see [Live mode switch](#live-mode-switch)); the current one is checked. Saved to `wallpaper-mode` once the new page is ready. |
 | **Scene ▸** Processing, Explorer, Idle, Raphael | Switches the scene live; the current one is checked. Saved to `scene` once the new page is ready. |
+| **Frame rate ▸** 30 FPS, 60 FPS | One global cap for all scenes and modes (default 30); saved to `frame-rate` once the new page is ready. Rebuilds the page. |
 | **Import failed sound…** / **Import warning sound…** | Picks a sound file for that alert kind (see [Sounds](#sounds)). |
 | **Remove failed sound** / **Remove warning sound** | Deletes that kind's sound; shown only while it has one. |
 | **Alert sounds** | Mute toggle, checked while sounds are on; shown only while either kind has a sound. Saved to `alert-sounds`. |
@@ -420,6 +439,7 @@ apps. It is created with commented defaults on first start.
 | --- | --- | --- | --- |
 | `wallpaper-mode` | `scene-mini`, `scene` | `scene-mini` | tray **Wallpaper mode ▸** (live) |
 | `scene` | `processing`, `explorer`, `idle`, `raphael` | `processing` | tray **Scene ▸**, `POST /v1/wallpaper/scene` |
+| `frame-rate` | `30`, `60` (global FPS cap) | `30` | tray **Frame rate ▸** |
 | `mini-position` | `top-left`, `top-center`, `top-right`, `right-center`, `bottom-right`, `bottom-center`, `bottom-left`, `left-center` | `top-right` | `SUPER+Z` / `SUPER+SHIFT+Z` |
 | `http-server` | `on`, `off` | `on` | hand edit (read at start) |
 | `http-server-port` | 1–65535 | `43811` | hand edit (read at start) |
@@ -459,7 +479,8 @@ for example `HDMI-A-2`. This section lists every line CieLinux emits:
 | `CIELINUX_HYPRLAND fullscreen-watch unavailable reason=no-hyprland-socket\|connect-failed` | No Hyprland reachable (once per outage). |
 | `CIELINUX_HYPRLAND fullscreen-watch lost` | The Hyprland event socket dropped (Hyprland exited or restarted). |
 | `CIELINUX_HYPRLAND fullscreen-watch reconnected monitor=<name>` | Connected again after an outage. |
-| `CIELINUX_HYPRLAND fullscreen-watch coverage on\|off monitor=<name>` | Coverage tracking turned on (wallpaper) or off (mini). Starting in the mini logs `coverage off` before `started`. |
+| `CIELINUX_HYPRLAND fullscreen-watch coverage on monitor=<name>` | Coverage tracking turned on for the wallpaper. Scene/rate changes within the same mode do not toggle coverage. |
+| `CIELINUX_HYPRLAND fullscreen-watch coverage off monitor=<name>` | Coverage tracking turned off for the mini. Starting in the mini logs this before `started`. |
 | `CIELINUX_HYPRLAND fullscreen-watch query-failed` | First failed query of a streak. |
 | `CIELINUX_HYPRLAND fullscreen-watch query-recovered` | A query succeeded after a failure streak. |
 | `CIELINUX_WALLPAPER covered monitor=<name>` / `uncovered monitor=<name>` | A fullscreen window started or stopped covering the wallpaper's output. |
@@ -486,7 +507,7 @@ for example `HDMI-A-2`. This section lists every line CieLinux emits:
 | `CIELINUX_TRAY available` | A tray host was already up at start. |
 | `CIELINUX_TRAY unavailable: <reason>` | No tray host yet, it went away, or there is no D-Bus session bus. |
 | `CIELINUX_TRAY recreated` | The icon is back after the host returned. |
-| `CIELINUX_TRAY click-failed item=<item>` | A menu action threw. `<item>` is `mode`, `scene`, `import-failed-sound`, `import-warning-sound`, `remove-failed-sound`, `remove-warning-sound`, `alert-sounds` or `exit`. |
+| `CIELINUX_TRAY click-failed item=<item>` | A menu action threw. `<item>` is `mode`, `scene`, `frame-rate`, `import-failed-sound`, `import-warning-sound`, `remove-failed-sound`, `remove-warning-sound`, `alert-sounds` or `exit`. |
 | `CIELINUX_HTTP listening port=<port>` | The HTTP server is up. |
 | `CIELINUX_HTTP ::1 unavailable (<error>); serving 127.0.0.1 only` | IPv6 loopback could not be bound; IPv4 loopback still serves. Logged just before `listening`. |
 | `CIELINUX_HTTP unavailable: <reason>; running without HTTP` | Busy port or no token. |
@@ -593,7 +614,7 @@ of page time, at most 12 times (the first two minutes, a full `--duration 120` r
 | `work_n` | Renders measured in `work`. |
 | `maxgap_ms` | Longest gap between two completed renders. |
 
-At 60 fps most `dt` samples fall in the ≤17 ms bucket, at 30 fps (the mini) in ≤34 ms.
+At 60 fps most `dt` samples fall in the ≤17 ms bucket, at 30 fps in ≤34 ms (either mode).
 
 ### Lines from Qt and FFmpeg
 

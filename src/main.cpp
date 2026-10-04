@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
     options.mode = effectiveMode(options.scene, options.mode);
     const QString &output = options.output, &scene = options.scene, &mode = options.mode;
     // The initial target; live switches go through sceneHost below.
-    const QUrl sceneUrl(sceneUrlFor(scene, mode));
+    const QUrl sceneUrl(sceneUrlFor(scene, mode, stored.settings.frameRate));
     // Reject inherited Chromium overrides, even apparently harmless ones: this
     // host has one auditable policy and never disables the sandbox.
     for (const char *name : {"QTWEBENGINE_DISABLE_SANDBOX", "QTWEBENGINE_CHROMIUM_FLAGS",
@@ -208,12 +208,13 @@ int main(int argc, char **argv) {
     // Internal control surface for the tray (A2) and HTTP server (A3). A switch
     // updates both URL gates, then replaces the attachment as a new generation;
     // the shown target is persisted only once that generation is ready.
-    SceneHost sceneHost(scene, mode, [&](const QUrl &url) {
+    SceneHost sceneHost(scene, mode, stored.settings.frameRate, [&](const QUrl &url) {
         interceptor.select(url);
         return policy.retarget(url);
-    }, [&](const QString &shownScene, const QString &shownMode) {
+    }, [&](const QString &shownScene, const QString &shownMode, int shownFps) {
         stored.settings.scene = shownScene;
         stored.settings.wallpaperMode = shownMode;
+        stored.settings.frameRate = shownFps;
         if (stored.canSave()) SettingsFile::save(settingsPath, stored.settings);
     });
     QObject::connect(&policy, &Policy::readyChanged, &sceneHost, [&] {
@@ -300,18 +301,21 @@ int main(int argc, char **argv) {
     });
     fullscreenWatch.setCoverage(sceneHost.mode() == QStringLiteral("scene"));
     fullscreenWatch.start();
-    // B1 live mode switch (CielWin SelectMode): the old surface is gone, so a show still pending
-    // for its page is dropped and an alert inside its duration is re-shown on the new surface for
-    // its remaining time (never announced twice). A scene switch keeps the surface.
+    // Every live retarget replaces the page, including same-mode FPS changes.
+    // Invalidate the old channel now, before clearing stale pending content; the
+    // reconstruction turn precedes the update and replays only remaining time.
+    // Mode-only coverage/logging must not run for scene or rate changes.
     QString alertSurfaceMode = sceneHost.mode();
     QObject::connect(&sceneHost, &SceneHost::changed, &alertDriver, [&] {
-        if (sceneHost.mode() == alertSurfaceMode) return;
-        alertSurfaceMode = sceneHost.mode();
+        alertBridge.attach(policy.generation());
         alertBridge.hide();
         alertDriver.surfaceReplaced();
-        qInfo("CIELINUX_MODE switched mode=%s", qPrintable(alertSurfaceMode));
-        fullscreenWatch.setCoverage(sceneHost.mode() == QStringLiteral("scene"));
-        updateScenePause();
+        if (sceneHost.mode() != alertSurfaceMode) {
+            alertSurfaceMode = sceneHost.mode();
+            qInfo("CIELINUX_MODE switched mode=%s", qPrintable(alertSurfaceMode));
+            fullscreenWatch.setCoverage(sceneHost.mode() == QStringLiteral("scene"));
+            updateScenePause();
+        }
         QTimer::singleShot(0, &alertDriver, [&] { updateAlerts(); });
     });
     QTimer alertTick;
