@@ -437,8 +437,9 @@ example while a program waits for your answer. `duration: 0` is accepted only wi
 - **Failed preempts held:** a request with any failed tile while a held warning shows
   (or waits) is shown at once for its own duration, with its sound and shake. The held
   warning is suspended and comes back when the failed alert ends, for the rest of its
-  hold, under the same id and without playing its sound again. If it is cleared or its
-  hold max passes meanwhile, it does not come back.
+  hold, under the same id and without playing its sound again, however many times it is
+  preempted. One preempted before it ever showed plays its sound when it first shows. If
+  it is cleared or its hold max passes meanwhile, it does not come back.
 - **Repeating sound:** while a held warning shows, its warning sound (when alert sounds
   are on and a warning sound is set) plays again every 5 seconds until it is cleared or
   its hold max passes. It does not repeat while suspended, waiting or covered by a
@@ -446,6 +447,9 @@ example while a program waits for your answer. `duration: 0` is accepted only wi
 - **Other requests:** a warning while a held warning shows is ignored as usual. A held
   warning sent while a timed alert shows waits for it and starts when it ends (within
   the 5-minute start limit).
+- **One at a time:** at most one held warning exists. A held warning sent while another
+  one shows, waits or is suspended is ignored (plain `202 ok`, no id), so a later failed
+  request never displaces the suspended one.
 
 ### Writing a client
 
@@ -577,6 +581,7 @@ for example `HDMI-A-2`. This section lists every line CieLinux emits:
 | `CIELINUX_ALERT alert dropped: waited longer than the <age> max age without starting` | A held alert expired. |
 | `CIELINUX_ALERT alert dropped: held past the <max> hold max` | A held warning that was waiting or suspended reached `alert-hold-max-seconds`. |
 | `CIELINUX_ALERT alert <n> suspended: a failed alert preempts it` | A failed alert took the place of held warning `<n>`; it resumes afterwards. |
+| `CIELINUX_ALERT alert ignored: a held warning is already suspended` | A held warning was requested while another one was suspended; only one exists at a time. |
 | `CIELINUX_ALERT alert <n> cleared` | `POST /v1/alerts/clear` removed alert `<n>`. |
 | `CIELINUX_ALERT alert rejected: <error>` | An alert command could not be parsed. |
 | `CIELINUX_ALERT page-done gen=<n>` | The scene page reports the alert finished. |
@@ -729,7 +734,7 @@ node --test tests/*.test.mjs                 # from CieLinux/
 node --test CieLinux/tests/*.test.mjs        # from the repository root
 ```
 
-36 contract test files, 346 tests. They read the sources and compile small native
+36 contract test files, 348 tests. They read the sources and compile small native
 harnesses against `src/` (they need the same Qt and CMake toolchain as the build).
 `tests/paths.mjs` maps file names to `src/` and `scenes/`.
 

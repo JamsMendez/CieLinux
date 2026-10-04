@@ -88,7 +88,8 @@ They exist because QtWebEngine on Linux showed high renderer memory (about 0.8â€
 - `POST /v1/alerts` accepts `"duration": 0` with `warning` only (held until cleared); `duration: 0` with any `failed` answers `400 error: 'duration:0' requires warning only`.
 - An accepted alert answers `202 ok id=<n>` (`n` grows per run); an ignored (busy) request still answers plain `202 ok`.
 - New route `POST /v1/alerts/clear`, same checks, body at most 64 bytes: `{}` clears the held alert, `{"id": n}` clears that alert; always `202 ok`.
-- A failed request preempts a held warning, which resumes afterwards (same id, no second sound); a held request during a timed alert waits for it.
+- A failed request preempts a held warning, which resumes afterwards (same id, no second sound, however many times it is preempted); a held request during a timed alert waits for it.
+- At most one held warning is alive: a held request while one shows, waits or is suspended is ignored (`alert ignored: a held warning is already suspended`), so a failed request never overwrites the suspended one. CielWin already has both of these fixes (`a97697d`, `fix(alerts): keep one held warning and never replay its sound on resume`).
 - Safety max `alert-hold-max-seconds` (default 600), counted from the request, not from the start.
 - H4: while a held warning shows (not suspended, waiting or covered), its warning sound repeats every 5 s (`AlertDriver::heldWarningRepeatMs`, emitted as `alertRepeated` on the existing tick, restarting from each show or resume); timed alerts still play once. Port it to `AlertDriver.cs` with the H4 driver tests.
 

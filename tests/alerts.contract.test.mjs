@@ -502,6 +502,15 @@ test('queue: H1 a failed request preempts a held warning, which resumes for the 
             'ACTIVE warning:1 0 started=7000 ends=600000 id=1']);
 });
 
+test('queue: H1 at most one held warning: a held request while one is suspended is ignored; a later failed one suspends the same', () => {
+    assert.deepEqual(queue(['new', 'enq 0 warning:1 duration:0', 'state 0 1', 'enq 1000 failed:1 duration:2', 'state 1000 1',
+        'enq 1500 warning:1 duration:0', 'state 3000 1', 'enq 4000 failed:1 duration:2', 'state 4000 1', 'state 6000 1', 'state 600000 1']),
+        ['NEW', 'ID 1', 'ACTIVE warning:1 0 started=0 ends=600000 id=1', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 2',
+            'ACTIVE failed:1 2000 started=1000 ends=3000 id=2', 'DIAG alert ignored: a held warning is already suspended', 'ID 0',
+            'ACTIVE warning:1 0 started=3000 ends=600000 id=1', 'DIAG alert 1 suspended: a failed alert preempts it', 'ID 3',
+            'ACTIVE failed:1 2000 started=4000 ends=6000 id=3', 'ACTIVE warning:1 0 started=6000 ends=600000 id=1', 'NONE']);
+});
+
 test('queue: H1 a held request during a timed alert waits for it; a timed one during a timed alert is still ignored', () => {
     assert.deepEqual(queue(['new', 'enq 0 failed:1 duration:2', 'state 0 1', 'enq 1000 warning:1 duration:0', 'enq 1500 warning:1 duration:0',
         'state 1000 1', 'state 2000 1']),
@@ -625,6 +634,22 @@ test('driver: H1 a failed alert preempts a held warning; the warning resumes aft
         'clock 1005000', 'update']),
         ['REPLY ok id=1', 'REPLY ok id=2', showJson(['failed'], 1, 1, 5000), 'SHOWN failed',
             'HIDE', showJson(['warning'], 1, 1, 595000), 'SHOWN warning']);
+});
+
+test('driver: H1 a held warning preempted twice never replays its sound; a held request while it is suspended is ignored', () => {
+    assert.deepEqual(driver(['accept warning:1 duration:0', 'update', 'clock 1001000', 'accept failed:1 duration:1', 'update',
+        'clock 1002000', 'update', 'clock 1003000', 'accept failed:1 duration:1', 'update', 'clock 1004000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning',
+            'TRACE alert 1 suspended: a failed alert preempts it', 'REPLY ok id=2', 'HIDE', showJson(['failed'], 1, 1, 1000), 'SHOWN failed',
+            'HIDE', showJson(['warning'], 1, 1, 598000),
+            'TRACE alert 1 suspended: a failed alert preempts it', 'REPLY ok id=3', 'HIDE', showJson(['failed'], 1, 1, 1000), 'SHOWN failed',
+            'HIDE', showJson(['warning'], 1, 1, 596000)]);
+    // Plain ok, no id: the suspended warning stays the only held one and comes back.
+    assert.deepEqual(driver(['accept warning:1 duration:0', 'update', 'clock 1001000', 'accept failed:1 duration:2', 'update',
+        'accept warning:1 duration:0', 'clock 1003000', 'update']),
+        ['REPLY ok id=1', showJson(['warning'], 1, 1, 600000), 'SHOWN warning',
+            'TRACE alert 1 suspended: a failed alert preempts it', 'REPLY ok id=2', 'HIDE', showJson(['failed'], 1, 1, 2000), 'SHOWN failed',
+            'TRACE alert ignored: a held warning is already suspended', 'REPLY ok', 'HIDE', showJson(['warning'], 1, 1, 597000)]);
 });
 
 test('driver: H4 a showing held warning repeats its sound every 5 s until cleared or its hold max; a timed one never', () => {

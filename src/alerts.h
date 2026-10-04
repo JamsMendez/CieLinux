@@ -129,6 +129,8 @@ struct ActiveAlert {
 // are; a held request during a timed alert waits for it. A request with a failed tile preempts a
 // held warning (showing or waiting): the warning is suspended and resumes, same id, for the rest
 // of its hold once nothing else shows or waits. So at most one more alert, a suspended held one.
+// At most one held warning is ever alive: a held request while one shows, waits or is suspended
+// is ignored, so a failed request only ever suspends that one and never overwrites another.
 class AlertQueue {
 public:
     static constexpr qint64 defaultMaxAgeMs = 5 * 60 * 1000;
@@ -198,7 +200,9 @@ private:
     Clock clock;
     Trace trace;
     AlertQueue queue;
-    // Two announced ids: a held warning and the failed alert that preempted it are alive at once.
-    std::optional<quint64> displayed, announced, announcedBefore;
+    // The last announced alert, and the last announced held warning: a held warning outlives any
+    // number of failed alerts preempting it (the queue keeps at most one alive), so its resume
+    // never counts as new, however many were announced in between.
+    std::optional<quint64> displayed, announced, announcedHeld;
     std::optional<qint64> repeatAt; // H4: the next repeat of the displayed held warning; unset = restart
 };
