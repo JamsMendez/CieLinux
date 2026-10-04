@@ -51,6 +51,7 @@ Preserve reference appearance, resolution/quality and mini. Do not rewrite sched
 
 - USER VISUAL APPROVAL (live, scratch build with PERF-5 + highp nebula): Raphael and Processing approved 2026-10-03.
 - Commits on perf/wallpaper-blur-free-glow: dcc933b perf(scenes) baked glows; NEB-1 commit follows. Pre-existing failure unrelated to this feature: fullscreen.contract 'B9 wiring' fails on HEAD without the user's uncommitted src/ changes.
+- INSTALLED 2026-10-03 with user authorization via install.sh (working tree incl. user's uncommitted src/ changes) -> ~/.local/bin/cielinux sha256 f57cc7ec...; service active PID 524556, NRestarts 0. Live CADENCE first 10 s window (Raphael, 60): 555 draws, err 0 (includes startup gap 583 ms).
 
 ## Checks and acceptance
 - Observe meaningful RED/GREEN for behavior where deterministic runner applicable.
