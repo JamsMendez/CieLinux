@@ -750,7 +750,35 @@ function drawSpark(context, x, y, size, intensity, color, rayLength) {
   context.restore();
 }
 
+// Linux wallpaper optimization begin (W1): odd/tasks/wallpaper-explorer-idle-cpu.md. The vignette gradient only
+// depends on W and H; it is created once per (context, W, H) and reused (a CanvasGradient is resolved at fill
+// time under the same per-frame transform, so the pixels are the reference's).
+let vignetteGradientCache = { context: null, width: -1, height: -1, gradient: null };
+
+function cachedVignetteGradient(context) {
+  const cache = vignetteGradientCache;
+  if (cache.context === context && cache.width === W && cache.height === H) return cache.gradient;
+  const cx = W / 2;
+  const cy = H / 2;
+  const maxRadius = Math.hypot(cx, cy);
+  const gradient = context.createRadialGradient(cx, cy, maxRadius * VIGNETTE_INNER_STOP, cx, cy, maxRadius);
+  gradient.addColorStop(0, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, `rgba(0,0,0,${VIGNETTE_OUTER_ALPHA})`);
+  vignetteGradientCache = { context, width: W, height: H, gradient };
+  return gradient;
+}
+// Linux wallpaper optimization end (W1).
+
 function drawVignette(context) {
+  // Linux wallpaper optimization begin (W1): cached gradient (see cachedVignetteGradient).
+  if (typeof context.createRadialGradient === 'function') {
+    context.save();
+    context.fillStyle = cachedVignetteGradient(context);
+    context.fillRect(0, 0, W, H);
+    context.restore();
+    return;
+  }
+  // Linux wallpaper optimization end (W1).
   const cx = W / 2;
   const cy = H / 2;
   const maxRadius = Math.hypot(cx, cy);

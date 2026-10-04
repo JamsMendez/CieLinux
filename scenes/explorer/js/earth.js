@@ -216,6 +216,85 @@ function buildEarthSampleRows(lookup, size) {
 }
 // Linux mini optimization end.
 
+// Linux wallpaper optimization begin (W1): odd/tasks/wallpaper-explorer-idle-cpu.md. The equirect bake is
+// grayscale (every EARTH_*_COLOR has r = g = b), so every texel has r = g = b and the reference loop below
+// computes the same value three times per pixel. When that holds (checked once at load), this path computes
+// it once with the reference expressions in the reference order (identical doubles, identical bytes) and
+// writes the pixel as one 32-bit word. The wrap `(fract(x) * ew + ew) % ew` is rewritten without the float
+// modulo: s = fract(x) * ew + ew lies in [ew, 2 * ew], where s % ew is exactly s - ew (or 0 at 2 * ew), so
+// the result is bit-identical. Per-size tables hold the inside pixels' lookups (exact Float32 copies of
+// the Float32 lookups) and the reference latitude row terms. Falls back to the reference loop otherwise.
+const EARTH_EQUIRECT_GRAY = (() => {
+  const rgb = EARTH_EQUIRECT.rgb, texels = EARTH_EQUIRECT.width * EARTH_EQUIRECT.height;
+  const gray = new Float32Array(texels);
+  for (let i = 0; i < texels; i++) {
+    if (rgb[i * 3] !== rgb[i * 3 + 1] || rgb[i * 3] !== rgb[i * 3 + 2]) return null;
+    gray[i] = rgb[i * 3];
+  }
+  return gray;
+})();
+const EARTH_LITTLE_ENDIAN = new Uint8Array(new Uint32Array([0x01020304]).buffer)[0] === 4;
+let earthGrayTables = null;
+
+function buildEarthGrayTables(lookup, cloudVisibility, imageData) {
+  const { lon, lat, light, rim, inside } = lookup;
+  const ew = EARTH_EQUIRECT.width, eh = EARTH_EQUIRECT.height;
+  let count = 0;
+  for (let idx = 0; idx < inside.length; idx++) count += inside[idx];
+  const tables = {
+    lookup, imageData, count, words: new Int32Array(imageData.data.buffer, imageData.data.byteOffset, inside.length),
+    pixel: new Int32Array(count), lon: new Float32Array(count), rowLo: new Int32Array(count), rowHi: new Int32Array(count),
+    fv: new Float64Array(count), light: new Float32Array(count), rim: new Float32Array(count), cv: new Float32Array(count),
+  };
+  for (let idx = 0, k = 0; idx < inside.length; idx++) {
+    if (!inside[idx]) continue;
+    const v = clamp01((lat[idx] / Math.PI) + 0.5) * (eh - 1); // reference expression
+    const v0 = Math.floor(v), v1 = Math.min(v0 + 1, eh - 1);
+    tables.pixel[k] = idx;
+    tables.lon[k] = lon[idx];
+    tables.rowLo[k] = v0 * ew;
+    tables.rowHi[k] = v1 * ew;
+    tables.fv[k] = v - v0;
+    tables.light[k] = light[idx];
+    tables.rim[k] = rim[idx];
+    tables.cv[k] = cloudVisibility[idx];
+    k++;
+  }
+  return tables;
+}
+
+function renderEarthGrayPixels(longitude) {
+  let tables = earthGrayTables;
+  if (tables === null || tables.lookup !== earthDiscLookup || tables.imageData !== earthFrameImageData) {
+    tables = earthGrayTables = buildEarthGrayTables(earthDiscLookup, earthCloudVisibilityLookup, earthFrameImageData);
+  }
+  const gray = EARTH_EQUIRECT_GRAY, ew = EARTH_EQUIRECT.width, ew2 = ew * 2;
+  const { count, words, pixel, lon, rowLo, rowHi, fv: fvs, light, rim, cv: cvs } = tables;
+  for (let k = 0; k < count; k++) {
+    const x = (lon[k] + longitude) / TAU;
+    const s = (x - Math.floor(x)) * ew + ew;
+    const u = s >= ew2 ? s - ew2 : s - ew; // === s % ew (see above)
+    const u0 = u | 0, u1 = u0 + 1 === ew ? 0 : u0 + 1; // 0 <= u < ew: truncation === Math.floor
+    const fu = u - u0, fv = fvs[k];
+    const lo = rowLo[k], hi = rowHi[k];
+    const a00 = gray[lo + u0], a10 = gray[lo + u1], a01 = gray[hi + u0], a11 = gray[hi + u1];
+    const top = a00 + (a10 - a00) * fu, bottom = a01 + (a11 - a01) * fu;
+    const r0 = top + (bottom - top) * fv;
+    const cv = cvs[k], rimAmount = rim[k];
+    const dim = r0 * 0.55;
+    let rr = dim + (r0 - dim) * cv;
+    rr = rr + (235 - rr) * rimAmount;
+    const lit = (rr * light[k]) / 255;
+    const scaled = (lit < 0 ? 0 : (lit > 1 ? 1 : lit)) * 255; // clamp01(lit) * 255, in [0, 255]
+    // === Math.round(scaled): for scaled >= 0.5 the sum scaled + 0.5 is exact (same binade, ulp <= 2^-45),
+    // so truncating it is round-half-up; below 0.5 Math.round gives 0 (also for 0.5 - 2^-54, where the
+    // rounded sum would reach 1).
+    const value = scaled < 0.5 ? 0 : (scaled + 0.5) | 0;
+    words[pixel[k]] = -16777216 | (value << 16) | (value << 8) | value; // 0xff000000 as int32: A=255, B=G=R
+  }
+}
+// Linux wallpaper optimization end (W1).
+
 const earthFrameCanvas = document.createElement('canvas');
 const earthFrameCtx = earthFrameCanvas.getContext('2d');
 let earthFrameImageData = null;
@@ -236,6 +315,13 @@ function renderEarthFrame(size, longitude) {
     // Linux mini optimization end.
   }
 
+  // Linux wallpaper optimization begin (W1): grayscale fast path, byte-identical (see renderEarthGrayPixels).
+  if (EARTH_EQUIRECT_GRAY !== null && EARTH_LITTLE_ENDIAN) {
+    renderEarthGrayPixels(longitude);
+    earthFrameCtx.putImageData(earthFrameImageData, 0, 0);
+    return earthFrameCanvas;
+  }
+  // Linux wallpaper optimization end (W1).
   const { lon, light, rim } = earthDiscLookup;
   const cloudVisibility = earthCloudVisibilityLookup;
   const data = earthFrameImageData.data;

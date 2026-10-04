@@ -72,7 +72,7 @@ static int replay(bool initialReady, bool expire, bool covered) {
     auto updateScenePause = [&] { ++pauses; };
     struct Watch { int calls = 0; void setCoverage(bool) { ++calls; } } fullscreenWatch;
     // Start visible, then cover the wallpaper if this case requires it.
-    CHECK(alertDriver.accept("failed:1 duration:5") == "ok");
+    CHECK(alertDriver.accept("failed:1 duration:5") == "ok id=1");
     alertDriver.update(&surface, false);
     CHECK(sounds == 1);
     alertBridge.setScenePaused(covered);

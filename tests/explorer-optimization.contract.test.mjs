@@ -199,6 +199,9 @@ const spriteCount = (ops, o1Ops) => {
 test('explorer rising sparks: the stream is identical to the O1 stream, op for op (full; mini sprite count)', () => {
     for (const options of variants) {
         const h = harness(options);
+        // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md) stamps mature full-variant sparks from an atlas; disabling
+        // its atlas runs the unchanged reference path below the W1 block (W1 itself: wallpaper-optimization.contract).
+        if (options.variant !== 'mini') h.evaluate('risingSparkFullAtlasFor = () => null');
         for (const time of [...sparkTimes, 10, 10 + 1 / 30, 10 + 2 / 30]) {
             const o1 = h.record(), now = h.record();
             h.sandbox.o1DrawRisingSparks(o1.proxy, time);
@@ -266,7 +269,9 @@ test('explorer earth: latitude-only sampling terms are computed once per size, n
     let calls = 0;
     MathObject.min = (...args) => { calls++; return min(...args); };
     try { h.sandbox.renderEarthFrame(64, 0.5); } finally { MathObject.min = min; }
-    assert.equal(calls, 3 * inside, `${calls} Math.min calls for ${inside} inside pixels (O1: ${5 * inside})`);
+    // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md): the grayscale fast path inlines the output clamp, so no
+    // Math.min call is left per pixel (O1b: 3 per inside pixel).
+    assert.equal(calls, 0, `${calls} Math.min calls for ${inside} inside pixels (O1: ${5 * inside}, O1b: ${3 * inside})`);
 });
 
 test('explorer mini frame: the scene stream outside the sparks matches a frame drawn with the O1 functions', () => {

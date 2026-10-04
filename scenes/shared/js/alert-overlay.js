@@ -248,7 +248,305 @@ function drawSeeThroughIntersections(g, letters, tileOffsetX, tileOffsetY, scene
   g.restore();
 }
 
+// Linux port begin (W1): odd/tasks/wallpaper-explorer-idle-cpu.md. The wash (a full-tile evenodd path), the
+// title letters (two giant fillText) and the letters' drop shadow (shadowBlur ~3% of the screen, a full-tile
+// blur) only depend on the tile size, the theme and the title font, yet the reference repaints them every
+// frame. They are painted once per key into tile-sized device-pixel canvases with the reference calls and
+// stamped with plain drawImage calls; the shadow is baked together with its letters (shadow, then letters,
+// both at globalAlpha 0.86, onto transparent pixels), which source-over composites like the reference pair.
+// The difference rails, the see-through intersections (scene animation), the frame and the module counters
+// stay per frame, in the reference order. The key includes the measured title width, so the bake is redone
+// when the bundled title face finishes loading. Released when the overlay stops animating.
+var failureStaticCache = {};
+var failureMeasureContext = null; // 1x1 canvas, only measures the title for the cache key
+
+function failureStaticCanvas(pixelWidth, pixelHeight) {
+  var canvasElement = document.createElement("canvas");
+  canvasElement.width = pixelWidth;
+  canvasElement.height = pixelHeight;
+  var g = canvasElement.getContext("2d");
+  g.setTransform(canvasScaleX, 0, 0, canvasScaleY, 0, 0);
+  return { canvas: canvasElement, g: g };
+}
+
+function releaseFailureStaticCache() {
+  for (var key in failureStaticCache) {
+    var entry = failureStaticCache[key];
+    [entry.wash, entry.letters, entry.shadowed].forEach(function (layer) { layer.canvas.width = 0; layer.canvas.height = 0; });
+  }
+  failureStaticCache = {};
+}
+
+function failureStaticLayers(frame, rails, theme, lettersFill, tileDeviceW, tileDeviceH) {
+  if (!failureMeasureContext) failureMeasureContext = failureStaticCanvas(1, 1).g;
+  failureMeasureContext.font = "400 100px " + FAILURE_TITLE_FONT;
+  var key = [theme.title, theme.wash, lettersFill, W, H, canvasScaleX, canvasScaleY, tileDeviceW, tileDeviceH,
+    failureMeasureContext.measureText(theme.title).width].join("|");
+  var cached = failureStaticCache[key];
+  if (cached) return cached;
+  var minD = Math.min(W, H);
+  var lettersLayer = failureStaticCanvas(tileDeviceW, tileDeviceH);
+  var wash = failureStaticCanvas(tileDeviceW, tileDeviceH);
+  wash.g.beginPath();
+  wash.g.rect(0, 0, W, H);
+  for (var i = 0; i < rails.length; i++) wash.g.rect(rails[i][0], rails[i][1], rails[i][2], rails[i][3]);
+  wash.g.fillStyle = theme.wash;
+  wash.g.fill("evenodd");
+  lettersLayer.g.fillStyle = lettersFill;
+  drawFailureTitle(lettersLayer.g, frame, theme.title);
+  var shadowed = failureStaticCanvas(tileDeviceW, tileDeviceH);
+  shadowed.g.shadowColor = "rgba(0,0,0,0.8)";
+  shadowed.g.shadowBlur = minD * 0.03 * canvasScaleX;
+  shadowed.g.shadowOffsetY = minD * 0.008 * canvasScaleY;
+  shadowed.g.globalAlpha = 0.86;
+  shadowed.g.drawImage(lettersLayer.canvas, 0, 0, W, H);
+  cached = failureStaticCache[key] = { wash: wash, letters: lettersLayer, shadowed: shadowed };
+  return cached;
+}
+
+// The reference drawFailureOverlay with the three static layers stamped from failureStaticLayers.
+function drawFailureOverlayCached(g, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, counter, theme, tileDeviceW, tileDeviceH) {
+  var minD = Math.min(W, H);
+  var frame = { x: W * 0.038, y: H * 0.064 };
+  frame.w = W - frame.x * 2;
+  frame.h = H - frame.y * 2;
+  var rails = failureRails(frame);
+  var layers = failureStaticLayers(frame, rails, theme, lumaKeyedAlertLetters() ? theme.keyedLetters : theme.letters,
+    tileDeviceW, tileDeviceH);
+
+  g.save();
+  g.drawImage(layers.wash.canvas, 0, 0, W, H);
+  g.save();
+  g.globalCompositeOperation = "difference";
+  g.fillStyle = "rgba(255,255,255,0.9)";
+  for (var r = 0; r < rails.length; r++) g.fillRect(rails[r][0], rails[r][1], rails[r][2], rails[r][3]);
+  g.restore();
+
+  g.drawImage(layers.shadowed.canvas, 0, 0, W, H);
+
+  var intersections = failureLayer("intersections", tileDeviceW, tileDeviceH);
+  drawSeeThroughIntersections(intersections, layers.letters.canvas, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, theme.intersections);
+  g.globalAlpha = 0.95;
+  g.drawImage(intersections.canvas, 0, 0, W, H);
+  g.globalAlpha = 1;
+
+  g.strokeStyle = "rgba(255,255,255,0.9)";
+  g.lineWidth = Math.max(2, minD * 0.004);
+  g.strokeRect(frame.x, frame.y, frame.w, frame.h);
+  drawFailureModules(g, frame, counter, theme.bits);
+  g.restore();
+}
+// Linux port end.
+
+// Linux port begin (W4): odd/tasks/wallpaper-explorer-idle-cpu.md. The full (unkeyed) wallpaper's per-frame overlay
+// work, made proportional to what actually changes; the mini (luma-keyed) page keeps drawFailureOverlayCached.
+//   - See-through: the intersections are only visible inside the letters, and the letters only exist inside the two
+//     title clip bands (drawFailureTitle). The recolor (source-in), the letters clip (destination-in) and the stamp
+//     onto the canvas run over those two device-pixel bands (2 px margin) instead of the whole tile. A scene that
+//     already drew its see-through content into a full-canvas layer this frame (sceneSeeThroughFrameLayer, explorer's
+//     rising sparks) is blitted into the bands instead of drawing it a second time through sceneSeeThroughLayer.
+//   - Modules: the boxes and their labels only change when the counter ticks (every FAILURE_COUNTER_STEP_MS), so they
+//     are drawn by the reference drawFailureModules into a tile layer once per counter value (at the same sub-pixel
+//     origin) and its two columns are stamped every frame.
+//   - Backdrop: a shown FAILED tile pixelates the scene canvas as the scene drew it. Every such tile is downscaled
+//     straight from the canvas before any tile draws (what the whole-canvas copy preserved), so the full-canvas copy
+//     is skipped; a tile still revealing keeps the reference copy.
+var failureModuleCache = {};
+var failureDirectBackdropPixels = null;
+
+// True while some tile draws its see-through layer this frame (states are advanced by alertSceneMs before the scene).
+function alertSeeThroughExpected() {
+  if (!animating || typeof document === "undefined" || lumaKeyedAlertLetters()) return false;
+  for (var i = 0; i < tiles.length; i++) {
+    var state = kindState[tiles[i]].state;
+    if (state === "revealing" || state === "shown") return true;
+  }
+  return false;
+}
+
+function failureLetterBands(frame, tileDeviceW, tileDeviceH) {
+  var bandH = H * 0.23;
+  var tops = [frame.y, frame.y + frame.h - bandH];
+  var bands = [];
+  for (var i = 0; i < tops.length; i++) {
+    var x0 = Math.max(0, Math.floor(frame.x * canvasScaleX) - 2);
+    var x1 = Math.min(tileDeviceW, Math.ceil((frame.x + frame.w) * canvasScaleX) + 2);
+    var y0 = Math.max(0, Math.floor(tops[i] * canvasScaleY) - 2);
+    var y1 = Math.min(tileDeviceH, Math.ceil((tops[i] + bandH) * canvasScaleY) + 2);
+    if (x1 <= x0 || y1 <= y0) continue;
+    var last = bands[bands.length - 1];
+    if (last && y0 <= last.y + last.h) { // tiny tile: never recolor/clip a pixel twice
+      last.h = Math.max(last.y + last.h, y1) - last.y;
+      continue;
+    }
+    bands.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+  }
+  return bands;
+}
+
+function drawSeeThroughBands(g, letters, bands, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, color) {
+  var sceneLayer = typeof sceneSeeThroughFrameLayer === "function" ? sceneSeeThroughFrameLayer(sceneTime) : null;
+  if (!sceneLayer) {
+    // The reference hook call (see drawSeeThroughIntersections).
+    var tileW = W, tileH = H;
+    W = sceneW;
+    H = sceneH;
+    g.save();
+    try {
+      g.translate(tileOffsetX, tileOffsetY);
+      sceneSeeThroughLayer(g, sceneW, sceneH, sceneTime);
+    } finally {
+      g.restore();
+      W = tileW;
+      H = tileH;
+    }
+  }
+  for (var b = 0; b < bands.length; b++) {
+    var band = bands[b];
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.beginPath();
+    g.rect(band.x, band.y, band.w, band.h);
+    g.clip();
+    if (sceneLayer) {
+      g.setTransform(canvasScaleX, 0, 0, canvasScaleY, 0, 0);
+      g.translate(tileOffsetX, tileOffsetY);
+      g.drawImage(sceneLayer, 0, 0, sceneW, sceneH);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = color;
+    g.fillRect(band.x, band.y, band.w, band.h);
+    g.globalCompositeOperation = "destination-in";
+    g.drawImage(letters, band.x, band.y, band.w, band.h, band.x, band.y, band.w, band.h);
+    g.restore();
+  }
+}
+
+function stampFailureModules(g, frame, counter, bits, tileOffsetX, tileOffsetY, tileDeviceW, tileDeviceH) {
+  // Device origin of the tile in `g`: the scene canvas is translated by the tile's own (CSS) offset, a reveal
+  // overlay layer is tile-local.
+  var originX = g === ctx ? -tileOffsetX * canvasScaleX : 0;
+  var originY = g === ctx ? -tileOffsetY * canvasScaleY : 0;
+  var intX = Math.floor(originX), intY = Math.floor(originY);
+  var fracX = originX - intX, fracY = originY - intY;
+  var layerW = tileDeviceW + 2, layerH = tileDeviceH + 2;
+  var key = [bits, W, H, canvasScaleX, canvasScaleY, layerW, layerH, fracX, fracY].join("|");
+  var entry = failureModuleCache[key];
+  if (!entry) entry = failureModuleCache[key] = { layer: failureStaticCanvas(layerW, layerH), counter: null };
+  if (entry.counter !== counter) {
+    var m = entry.layer.g;
+    m.setTransform(1, 0, 0, 1, 0, 0);
+    m.clearRect(0, 0, layerW, layerH);
+    m.setTransform(canvasScaleX, 0, 0, canvasScaleY, fracX, fracY);
+    drawFailureModules(m, frame, counter, bits);
+    entry.counter = counter;
+  }
+  // Same column centers and box width as drawFailureModules; the margin covers the box stroke.
+  var halfW = Math.max(16, W * 0.018) * 0.5 + Math.max(1, Math.min(W, H) * 0.0018) + 2;
+  var columns = [frame.x * 0.62, frame.x + frame.w + (W - frame.x - frame.w) * 0.38];
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = "source-over";
+  for (var c = 0; c < columns.length; c++) {
+    var x0 = Math.max(0, Math.floor((columns[c] - halfW) * canvasScaleX + fracX));
+    var x1 = Math.min(layerW, Math.ceil((columns[c] + halfW) * canvasScaleX + fracX));
+    if (x1 > x0) g.drawImage(entry.layer.canvas, x0, 0, x1 - x0, layerH, intX + x0, intY, x1 - x0, layerH);
+  }
+  g.restore();
+}
+
+function releaseFailureModuleCache() {
+  for (var key in failureModuleCache) {
+    failureModuleCache[key].layer.canvas.width = 0;
+    failureModuleCache[key].layer.canvas.height = 0;
+  }
+  failureModuleCache = {};
+  failureDirectBackdropPixels = null;
+}
+
+// drawFailureOverlayCached with the see-through bands and the module stamps.
+function drawFailureOverlayBands(g, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, counter, theme, tileDeviceW, tileDeviceH) {
+  var minD = Math.min(W, H);
+  var frame = { x: W * 0.038, y: H * 0.064 };
+  frame.w = W - frame.x * 2;
+  frame.h = H - frame.y * 2;
+  var rails = failureRails(frame);
+  var layers = failureStaticLayers(frame, rails, theme, theme.letters, tileDeviceW, tileDeviceH);
+
+  g.save();
+  g.drawImage(layers.wash.canvas, 0, 0, W, H);
+  g.save();
+  g.globalCompositeOperation = "difference";
+  g.fillStyle = "rgba(255,255,255,0.9)";
+  for (var r = 0; r < rails.length; r++) g.fillRect(rails[r][0], rails[r][1], rails[r][2], rails[r][3]);
+  g.restore();
+
+  g.drawImage(layers.shadowed.canvas, 0, 0, W, H);
+
+  var bands = failureLetterBands(frame, tileDeviceW, tileDeviceH);
+  var intersections = failureLayer("intersections", tileDeviceW, tileDeviceH);
+  drawSeeThroughBands(intersections, layers.letters.canvas, bands, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, theme.intersections);
+  g.globalAlpha = 0.95;
+  for (var b = 0; b < bands.length; b++) {
+    var band = bands[b];
+    g.drawImage(intersections.canvas, band.x, band.y, band.w, band.h,
+      band.x * W / tileDeviceW, band.y * H / tileDeviceH, band.w * W / tileDeviceW, band.h * H / tileDeviceH);
+  }
+  g.globalAlpha = 1;
+
+  g.strokeStyle = "rgba(255,255,255,0.9)";
+  g.lineWidth = Math.max(2, minD * 0.004);
+  g.strokeRect(frame.x, frame.y, frame.w, frame.h);
+  stampFailureModules(g, frame, counter, theme.bits, tileOffsetX, tileOffsetY, tileDeviceW, tileDeviceH);
+  g.restore();
+}
+
+// Called by captureBackdropIfNeeded: when every pixelating tile is shown, downscale each straight from the canvas.
+function prepareDirectBackdropPixels() {
+  failureDirectBackdropPixels = null;
+  if (typeof document === "undefined" || lumaKeyedAlertLetters()) return null;
+  var rects = tileRects();
+  var jobs = [];
+  for (var i = 0; i < tiles.length && i < rects.length; i++) {
+    var state = kindState[tiles[i]].state;
+    if (!FAILURE_OVERLAY_THEMES[tiles[i]].pixelateBackdrop || state === "hidden" || state === "shaking") continue;
+    if (state !== "shown") return null;
+    jobs.push(i);
+  }
+  var cell = Math.max(1, Math.round(FAILURE_BACKDROP_CELL * canvasScaleX));
+  var prepared = {};
+  for (var j = 0; j < jobs.length; j++) {
+    var rect = rects[jobs[j]];
+    var x = Math.round(rect.x * canvasScaleX), y = Math.round(rect.y * canvasScaleY);
+    var w = Math.round(rect.w * canvasScaleX), h = Math.round(rect.h * canvasScaleY);
+    var slot = "backdropPixels:" + jobs[j];
+    var pixelWidth = Math.max(1, Math.ceil(w / cell));
+    var pixelHeight = Math.max(1, Math.ceil(h / cell));
+    var pixels = failureLayer(slot, pixelWidth, pixelHeight, false);
+    pixels.imageSmoothingEnabled = true;
+    pixels.drawImage(canvas, x, y, w, h, 0, 0, pixelWidth, pixelHeight);
+    prepared[[x, y, w, h, cell].join("|")] = failureLayers[slot].canvas;
+  }
+  failureDirectBackdropPixels = prepared;
+  return { canvas: canvas };
+}
+// Linux port end.
+
 function drawFailureOverlay(g, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, counter, theme, tileDeviceW, tileDeviceH) {
+  // Linux port begin (W4): full wallpaper overlay (see drawFailureOverlayBands).
+  if (typeof document !== "undefined" && !lumaKeyedAlertLetters()) {
+    drawFailureOverlayBands(g, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, counter, theme, tileDeviceW, tileDeviceH);
+    return;
+  }
+  // Linux port end.
+  // Linux port begin (W1): static layers cached (see drawFailureOverlayCached).
+  if (typeof document !== "undefined") {
+    drawFailureOverlayCached(g, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, counter, theme, tileDeviceW, tileDeviceH);
+    return;
+  }
+  // Linux port end.
   var minD = Math.min(W, H);
   var frame = { x: W * 0.038, y: H * 0.064 };
   frame.w = W - frame.x * 2;
@@ -319,6 +617,19 @@ function applyFailureShake(elapsed) {
 // back over the tile's own device rect with hard pixel edges. `source` is either the whole-canvas
 // backdrop snapshot (cropped to this tile) or this tile's own already-tile-sized overlay buffer.
 function drawTilePixelated(source, sourceX, sourceY, sourceW, sourceH, cell, slot, alpha, tileDeviceX, tileDeviceY, tileDeviceW, tileDeviceH) {
+  // Linux port begin (W4): a tile downscaled up front by prepareDirectBackdropPixels is only upscaled here.
+  var prepared = failureDirectBackdropPixels && source === canvas
+    ? failureDirectBackdropPixels[[sourceX, sourceY, sourceW, sourceH, cell].join("|")] : null;
+  if (prepared) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(prepared, tileDeviceX, tileDeviceY, tileDeviceW, tileDeviceH);
+    ctx.restore();
+    return;
+  }
+  // Linux port end.
   var pixelWidth = Math.max(1, Math.ceil(tileDeviceW / cell));
   var pixelHeight = Math.max(1, Math.ceil(tileDeviceH / cell));
   var pixels = failureLayer(slot, pixelWidth, pixelHeight, false);
@@ -558,6 +869,10 @@ function captureBackdropIfNeeded() {
     }
   }
   if (!needed) return null;
+  // Linux port begin (W4): shown tiles read the canvas directly (see prepareDirectBackdropPixels).
+  var direct = prepareDirectBackdropPixels();
+  if (direct) return direct;
+  // Linux port end.
   var backdrop = failureLayer("backdrop", canvas.width, canvas.height, false);
   backdrop.drawImage(canvas, 0, 0);
   return backdrop;
@@ -647,6 +962,17 @@ function renderAlertTile(rect, kind, ms, sceneW, sceneH, sceneTime, backdrop) {
 // concept (if any), and it can compute one itself from sceneW/sceneH exactly as its own scene render
 // loop always did.
 function renderAlertOverlay(ms, sceneW, sceneH, sceneTime) {
+  // Linux port begin (W4): free the module layers once the overlay has stopped.
+  if (!animating) {
+    for (var moduleKey in failureModuleCache) { releaseFailureModuleCache(); break; }
+  }
+  // Linux port end.
+  // Linux port begin (W1): free the cached static alert layers once the overlay has stopped.
+  if (!animating) {
+    for (var cachedKey in failureStaticCache) { releaseFailureStaticCache(); break; }
+    return;
+  }
+  // Linux port end.
   if (!animating) return;
   if (showStartMs === null) showStartMs = ms;
   var rects = tileRects();

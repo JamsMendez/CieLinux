@@ -325,6 +325,9 @@ test('explorer mini rising sparks: visible sparks are drawn in reference order, 
 
 test('explorer full rising sparks are unculled and stream-identical to the reference', () => {
     const h = harness('explorer', { variant: 'full', width: 320, height: 200 });
+    // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md) stamps mature full-variant sparks from an atlas; disabling
+    // its atlas runs the unchanged reference path below the W1 block (W1 itself: wallpaper-optimization.contract).
+    vm.runInContext('risingSparkFullAtlasFor = () => null', h.sandbox);
     for (const time of sparkTimes) {
         const reference = h.recorder(), optimized = h.recorder();
         h.sandbox.referenceDrawRisingSparks(reference.proxy, time);
