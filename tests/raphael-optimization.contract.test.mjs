@@ -527,16 +527,15 @@ test('raphael mini bakes only the glyph-ring sprites; full still bakes every spr
 // B5 (wallpaper optimizations): the wallpaper (full variant) uses the O3 changes whose output
 // is the reference one (delimiter layer, cached core gradients); the glyph-ring and hexadecagon bakes,
 // which resample, stay mini-only, so those streams are still the reference ones.
-test('raphael wallpaper (B5): glyph rings and hexadecagon keep the reference streams, delimiters come from one layer', () => {
+// PERF-5: the wallpaper hexadecagon stamps baked pulse glows instead of its canvas shadow, so its stream
+// differs from the reference by design (blur-free-glow.contract.test.mjs checks its reference shapes).
+test('raphael wallpaper (B5): glyph rings keep the reference streams, delimiters come from one layer', () => {
     for (const [width, height] of [[320, 200], [1920, 1080]]) {
         const h = harness({ variant: 'full', width, height });
         const first = h.tick(QUIET_MS);
         assert.deepEqual(h.errors, []);
         const [cx, cy] = centre(h);
         const progress = h.sandbox.animationProgress(QUIET_MS);
-        const hexadecagon = h.recorder();
-        h.sandbox.referenceLayers(hexadecagon.proxy).drawGoldenHexadecagon(cx, cy, progress, 0);
-        assert.deepEqual(json(h.capture(() => h.sandbox.drawGoldenHexadecagon(cx, cy, progress, 0))), json(hexadecagon.ops));
         const annuli = h.evaluate('glyphRingAnnuli(coreRadius(Math.min(W, H)))');
         const delimiters = h.recorder();
         h.sandbox.referenceLayers(delimiters.proxy).drawGlyphRingDelimiters(cx, cy, annuli);
@@ -600,7 +599,8 @@ test('raphael wallpaper (B5): central core paints the reference geometry from ca
             const reference = h.recorder();
             h.sandbox.referenceLayers(reference.proxy).drawCentralCore(cx, cy, phase, pulse);
             const ops = h.capture(() => h.sandbox.drawCentralCore(cx, cy, phase, pulse));
-            assertClose(flatten(ops), flatten(reference.ops), `phase ${phase} pulse ${pulse}`);
+            // PERF-5: the wallpaper stamps the spoke and hot-core glows; the shapes are the reference ones.
+            assertClose(flatten(ops), flatten(reference.ops).map(paint => ({ ...paint, shadow: null })), `phase ${phase} pulse ${pulse}`);
             radials += count(ops, 'createRadialGradient');
             linears += count(ops, 'createLinearGradient');
             calls++;

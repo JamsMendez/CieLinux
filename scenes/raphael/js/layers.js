@@ -25,6 +25,9 @@
 // A path with moveTo/lineTo pairs preserves independent segments while sharing one shadowed stroke.
 function drawGlowSegments(segments, width, alpha, blur = 8) {
   if (segments.length === 0) return;
+  // Linux mini optimization begin (PERF-5): see drawWallpaperGlowSegments.
+  if (!isMiniVariant && drawWallpaperGlowSegments(segments, width, alpha, blur)) return;
+  // Linux mini optimization end.
   ctx.save();
   ctx.strokeStyle = `rgba(${CENTRAL_RAY_STROKE_COLOR},${alpha})`;
   ctx.lineWidth = width;
@@ -40,6 +43,33 @@ function drawGlowSegments(segments, width, alpha, blur = 8) {
   ctx.restore();
 }
 
+// Linux mini optimization begin (PERF-5): the wallpaper stamps every segment's baked shadow (sprites.js,
+// wallpaperLineGlow) and strokes the segments unshadowed, in the reference order and composite operation.
+function drawWallpaperGlowSegments(segments, width, alpha, blur) {
+  const strokeStyle = `rgba(${CENTRAL_RAY_STROKE_COLOR},${alpha})`;
+  const glow = wallpaperLineGlow(width, strokeStyle, 'round', CENTRAL_RAY_GLOW_COLOR, blur);
+  if (!glow) return false;
+  const coords = wallpaperSegmentBuffer(segments.length);
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    for (let j = 0; j < 4; j++) coords[4 * i + j] = segment[j];
+  }
+  ctx.save();
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  stampWallpaperLineGlows(glow, coords, 0, segments.length);
+  ctx.beginPath();
+  for (const [x1, y1, x2, y2] of segments) {
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  }
+  ctx.stroke();
+  ctx.restore();
+  return true;
+}
+
+// Linux mini optimization end.
 // Normalize the full-loop endpoint before any trigonometry, so wet-light states
 // are bit-for-bit identical at the two ends of the ping-pong animation.
 function opticalCycle(phase) {
@@ -808,6 +838,41 @@ function drawGoldenHexadecagon(cx, cy, progress, pulse) {
     return;
   }
   // Linux mini optimization end.
+  // Linux mini optimization begin (PERF-5): the wallpaper stamps the ring's glow from baked pulse levels
+  // (sprites.js, wallpaperPulseGlows: the reference core stroke and shadow at rotation 0 for pulse
+  // i / WALLPAPER_PULSE_GLOW_LEVELS, under the ctx rotation) and strokes the core ring below unshadowed.
+  const ringGlow = isMiniVariant ? null : wallpaperPulseGlows(`hexadecagon|${r}`, (level, scale) => {
+    const levelVertices = hexadecagonVertices(r, level);
+    const lineWidth = r * HEXADECAGON_STROKE_WIDTH_FACTOR * (1 + level * HEXADECAGON_PULSE_STROKE_FACTOR) * 1.3;
+    const reach = levelVertices.reduce((max, vertex) => Math.max(max, Math.hypot(vertex.x, vertex.y)), 0) + lineWidth;
+    return bakeShadowLayer(reach, reach, scale, HEXADECAGON_RING_GLOW_COLOR,
+      HEXADECAGON_PULSE_BLUR_BASE + level * HEXADECAGON_PULSE_BLUR_RANGE, (g) => {
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.strokeStyle = HEXADECAGON_RING_CORE_COLOR;
+        g.lineWidth = lineWidth;
+        g.beginPath();
+        for (let v = 0; v < levelVertices.length; v++) {
+          if (v === 0) g.moveTo(levelVertices[v].x, levelVertices[v].y); else g.lineTo(levelVertices[v].x, levelVertices[v].y);
+        }
+        g.closePath();
+        g.stroke();
+      });
+  });
+  if (ringGlow) {
+    stampWallpaperPulseGlow(ringGlow, pulse);
+    ctx.strokeStyle = HEXADECAGON_RING_CORE_COLOR;
+    ctx.lineWidth = chromaticStrokeWidth * 1.3;
+    ctx.beginPath();
+    for (let v = 0; v < vertices.length; v++) {
+      if (v === 0) ctx.moveTo(vertices[v].x, vertices[v].y); else ctx.lineTo(vertices[v].x, vertices[v].y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  // Linux mini optimization end.
   ctx.strokeStyle = HEXADECAGON_RING_CORE_COLOR;
   ctx.lineWidth = chromaticStrokeWidth * 1.3;
   ctx.shadowColor = HEXADECAGON_RING_GLOW_COLOR;
@@ -887,9 +952,20 @@ function paintMiniRadialGlowLayer(cx, cy, radius, stops, colorRgb, compositeOper
   ctx.save();
   ctx.globalCompositeOperation = compositeOperation;
   ctx.translate(cx, cy);
+  // PERF-5: the wallpaper stamps the disc's baked shadow (sprites.js, stampWallpaperDiscGlow) under the
+  // same composite operation, then fills it unshadowed.
+  const shadowStamped = !!shadow && !isMiniVariant && stampWallpaperDiscGlow(
+    `raphael-core|${wallpaperGradientId(stops)}|${colorRgb}`, (g, discRadius) => {
+      const discGradient = g.createRadialGradient(0, 0, 0, 0, 0, discRadius);
+      for (const [offset, alpha] of stops) discGradient.addColorStop(offset, `rgba(${colorRgb},${alpha})`);
+      g.fillStyle = discGradient;
+      g.beginPath();
+      g.arc(0, 0, discRadius, 0, TAU);
+      g.fill();
+    }, shadow.color, shadow.blur, radius);
   ctx.scale(radius, radius);
   ctx.fillStyle = gradient;
-  if (shadow) {
+  if (shadow && !shadowStamped) {
     ctx.shadowColor = shadow.color;
     ctx.shadowBlur = shadow.blur;
   }
@@ -897,6 +973,15 @@ function paintMiniRadialGlowLayer(cx, cy, radius, stops, colorRgb, compositeOper
   ctx.arc(0, 0, 1, 0, TAU);
   ctx.fill();
   ctx.restore();
+}
+
+// PERF-5: a short id per stop list (the lists are module constants), for the disc glow cache key.
+const wallpaperGradientIds = new Map();
+
+function wallpaperGradientId(stops) {
+  let id = wallpaperGradientIds.get(stops);
+  if (id === undefined) wallpaperGradientIds.set(stops, id = wallpaperGradientIds.size);
+  return id;
 }
 
 // The eight glare streaks share one stop list per frame (it depends on flare only), so mini builds one
@@ -1085,7 +1170,39 @@ function pathRoundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
+// Linux mini optimization begin (PERF-5): the wallpaper's two counter panels are screen-fixed (their rect
+// depends on W/H only), so the panel's shadow is baked once (sprites.js, bakeShadowLayer) and stamped
+// under the unshadowed panel fill.
+function drawWallpaperGlyphCounterPanel(rect) {
+  const scale = canvasScaleX === canvasScaleY ? canvasScaleX : 0;
+  if (!(scale > 0)) return false;
+  const halfWidth = rect.width / 2;
+  const halfHeight = rect.height / 2;
+  const layer = wallpaperGlowEntry(`panel|${rect.x}|${rect.y}|${rect.width}|${rect.height}`, () =>
+    bakeShadowLayer(halfWidth, halfHeight, scale, GLYPH_COUNTER_PANEL_SHADOW_COLOR, GLYPH_COUNTER_PANEL_SHADOW_BLUR, (g) => {
+      g.fillStyle = GLYPH_COUNTER_PANEL_COLOR;
+      g.beginPath();
+      pathRoundedRect(g, -halfWidth, -halfHeight, rect.width, rect.height, GLYPH_COUNTER_PANEL_CORNER_RADIUS);
+      g.fill();
+    }));
+  ctx.save();
+  ctx.translate(rect.x + halfWidth, rect.y + halfHeight);
+  stampShadowLayer(layer, 1, 1);
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle = GLYPH_COUNTER_PANEL_COLOR;
+  ctx.beginPath();
+  pathRoundedRect(ctx, rect.x, rect.y, rect.width, rect.height, GLYPH_COUNTER_PANEL_CORNER_RADIUS);
+  ctx.fill();
+  ctx.restore();
+  return true;
+}
+
+// Linux mini optimization end.
 function drawGlyphCounterPanel(rect) {
+  // Linux mini optimization begin (PERF-5): see drawWallpaperGlyphCounterPanel.
+  if (!isMiniVariant && drawWallpaperGlyphCounterPanel(rect)) return;
+  // Linux mini optimization end.
   ctx.save();
   ctx.shadowColor = GLYPH_COUNTER_PANEL_SHADOW_COLOR;
   ctx.shadowBlur = GLYPH_COUNTER_PANEL_SHADOW_BLUR;

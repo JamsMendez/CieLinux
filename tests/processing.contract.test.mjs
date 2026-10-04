@@ -130,10 +130,12 @@ const referenceSha256 = {
     'scene-data': 'de7018c6f1079238acdd70db64dcffbae719099df5c4ded97b75c07e4d19451b',
     // Linux mini optimization (O2; B5 wallpaper glow index); was e32fc55627878ee0e83e3496d41a99c72d26a65eab93beefe1acb88f74460255;
     // CielWin reference: cd1c36857f4504393befb6c53b12e562d458f461860b1d366f4b24c9b5b0094b
-    sprites: '62eac9e5a312388493bed26d413b0f427d83324a67893b6feacee47c9502946a',
+    // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 62eac9e5a312388493bed26d413b0f427d83324a67893b6feacee47c9502946a
+    sprites: '7f726fff73672a38222af511a7861d04b3cbf525a78f892f3ccd314b36261cc4',
     // Linux mini optimization (O2, O2b; B5 wallpaper exact-stream layers); was 6fc77931949e0dfceadbbecd96f11370b2c2bb8816fb58fa7f769af315f428b0;
     // CielWin reference: 84cce57bef22a17d9a41f4f9b91cd7c7bfeaa0f485ed082a76643aa7f0c3a405
-    layers: '4af337720deb49ec9664ed42721326d8896b39baeb65e02189d27da51888cf35',
+    // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 4af337720deb49ec9664ed42721326d8896b39baeb65e02189d27da51888cf35
+    layers: '8a426f212cd6c6326be3befe2a61d1e1b1413af5e8114e04b5c5225ee97ca6d4',
     nebula: '0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162',
 };
 const sha256 = text => createHash('sha256').update(text).digest('hex');

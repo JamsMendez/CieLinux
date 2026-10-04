@@ -34,11 +34,13 @@ const referenceSha256 = {
     digits: 'f042fa5afc0c1666065f939d396882723ae722dae8a20e431606aeb1ca3394fd',
     'central-core': '76d8ec4b30810e005b0b9c5c69bc0568f9e05947a3b9e0765613011f7cff2bf8',
     // Linux mini optimization (O3, odd/tasks/mini-scene-optimization.md); CielWin reference: b97ab8fba52b6255e33909d470ff871eb269c6125d9cdeb9b736049b55af8ee5
-    sprites: '05c9f793b0813feb303b3d44a432254975ce3a79ca21a5467bb43553c65c8baf',
+    // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 05c9f793b0813feb303b3d44a432254975ce3a79ca21a5467bb43553c65c8baf
+    sprites: 'f2ece2e0cf0680b49e42fc7e4832d0b55980c4c9f797008268621a92c3925aa5',
     // Linux mini optimization (O3, odd/tasks/mini-scene-optimization.md); CielWin reference: 2a745ee5c5757d09eb475b30fab349ba53cb79d63321dc234fbdef24537de2fc
     // Re-pinned after old-name→CielWin comment rename (text-only); was 33d28a90a373dffe0d3354b54e1d3be9706f2c5b853154d77a9bb3b442af86a9
     // Re-pinned for B5 (wallpaper uses the delimiter layer and cached core gradients); was 731e58cc614ed87d88dc6a88246883f0a9d8ce08f09d6dcf4b0827644fc00460
-    layers: 'a1fa128ba2f159265f8572e57a4e751ad9dcb6acc3747ecc3e5b08420554285e',
+    // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was a1fa128ba2f159265f8572e57a4e751ad9dcb6acc3747ecc3e5b08420554285e
+    layers: 'aff3013c638f8780fb0cba5d7468a8cf55cdb08c43db3deb47b3746704affa1a',
 };
 // Reference nebula.js minus its two unbounded console.error lines, which the diagnostics replace.
 // Re-pinned after old-name→CielWin comment rename (text-only); was c1ba2023e1b91580bfb5ac671215cd8e840d0387c07125358da17f98d35d6576

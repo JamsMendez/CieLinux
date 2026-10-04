@@ -725,7 +725,11 @@ test('processing mini: a steady frame creates no gradients and no offscreen canv
 // B5 (wallpaper optimizations): the wallpaper (full variant) runs the exact-stream O2 layers
 // too, with the reference colour strings and the reference per-quad band fills (the O2b alpha rounding and
 // merged band fill stay mini-only). Sizes include a 1080p wallpaper (81 band segments).
-test('processing wallpaper (B5): bands, sphere, orbit blocks and rays keep the exact reference stream without the allocating helpers', () => {
+// PERF-5: the wallpaper bands and rays stamp baked glows instead of their canvas shadows, so their
+// streams differ from the reference by design; blur-free-glow.contract.test.mjs checks that they keep
+// every reference shape. They still run without the allocating helpers.
+const PERF5_GLOW_LAYERS = new Set(['drawAtomicOrbits', 'drawPerspectiveRays']);
+test('processing wallpaper (B5): sphere and orbit blocks keep the exact reference stream; no layer calls the allocating helpers', () => {
     for (const [width, height, dpr] of [[320, 200, 1], [1920, 1080, 1], [1280, 720, 2]]) {
         const h = harness({ variant: 'full', width, height, dpr });
         h.tick(0);
@@ -735,7 +739,8 @@ test('processing wallpaper (B5): bands, sphere, orbit blocks and rays keep the e
                 const expected = h.reference(name, ...args);
                 let ops;
                 const calls = h.callsTo(helpers, () => { ops = h.capture(() => h.sandbox[name](...args)); });
-                assert.deepEqual(json(ops), json(expected), `${name} at ${ms}, ${width}x${height}@${dpr}`);
+                if (!PERF5_GLOW_LAYERS.has(name))
+                    assert.deepEqual(json(ops), json(expected), `${name} at ${ms}, ${width}x${height}@${dpr}`);
                 for (const helper of helpers) assert.equal(calls[helper], 0, `${name} calls ${helper}`);
             }
         }
@@ -743,6 +748,8 @@ test('processing wallpaper (B5): bands, sphere, orbit blocks and rays keep the e
     }
 });
 
+// PERF-5: the wallpaper core stamps its spoke and disc glows, so the reference shapes are compared without shadows.
+const withoutShadows = paints => paints.map(paint => ({ ...paint, shadow: null }));
 test('processing wallpaper (B5): central core paints the reference geometry from one cached unit gradient', () => {
     const h = harness({ variant: 'full', width: 1920, height: 1080 });
     h.tick(0);
@@ -751,9 +758,7 @@ test('processing wallpaper (B5): central core paints the reference geometry from
     for (const phase of [0, 0.7, 2.9, 4.4, 5.5, 6.2]) {
         const expected = h.reference('drawCentralCore', cx, cy, phase);
         const ops = h.capture(() => h.sandbox.drawCentralCore(cx, cy, phase));
-        assertClose(flatten(ops), flatten(expected), `phase ${phase}`);
-        const segmentsEnd = expected.findIndex(op => op[0] === 'createRadialGradient');
-        assert.deepEqual(json(ops.slice(0, segmentsEnd)), json(expected.slice(0, segmentsEnd)));
+        assertClose(flatten(ops), withoutShadows(flatten(expected)), `phase ${phase}`);
         radials += count(ops, 'createRadialGradient');
     }
     assert.equal(radials, 0, 'the unit gradient was created by the first frame');

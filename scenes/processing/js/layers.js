@@ -294,9 +294,19 @@ function drawMiniFoldingBand(cx, cy, rx, ry, rot, width, foldPhase) {
     ctx.stroke();
   }
 
-  ctx.shadowColor = 'rgba(255,255,255,0.78)';
-  ctx.shadowBlur = structurePx(12, 1);
-  ctx.lineWidth = Math.max(structurePx(1.15, 0.5), width * 0.11);
+  // PERF-5: the wallpaper stamps the outline's baked shadow along its segments (butt caps: the
+  // closed outline has no caps, and butt-capped slices tile into the shadow of the joined polyline).
+  const outlineWidth = Math.max(structurePx(1.15, 0.5), width * 0.11);
+  const outlineGlow = isMiniVariant ? null
+    : wallpaperLineGlow(outlineWidth, 'rgb(255,255,255)', 'butt', 'rgba(255,255,255,0.78)', structurePx(12, 1));
+  if (outlineGlow) {
+    const segmentCount = foldingBandOutlineSegments(count);
+    stampWallpaperLineGlows(outlineGlow, wallpaperSegmentCoords, 0, segmentCount);
+  } else {
+    ctx.shadowColor = 'rgba(255,255,255,0.78)';
+    ctx.shadowBlur = structurePx(12, 1);
+  }
+  ctx.lineWidth = outlineWidth;
   ctx.strokeStyle = 'rgb(255,255,255)';
   ctx.beginPath();
   ctx.moveTo(leftX[0], leftY[0]);
@@ -305,6 +315,30 @@ function drawMiniFoldingBand(cx, cy, rx, ry, rot, width, foldPhase) {
   ctx.closePath();
   ctx.stroke();
   ctx.restore();
+}
+
+// PERF-5: the band outline path above as segments, into wallpaperSegmentBuffer: the left edge, the
+// bar to the right edge, the right edge and the closing bar back. The two bars coincide on a closed
+// band (the first and last points are the same angle), so the closing one is then left out: the
+// reference strokes them as one path, whose shadow blurs their union once.
+function foldingBandOutlineSegments(count) {
+  const { leftX, leftY, rightX, rightY } = miniFoldingBandPoints;
+  const coords = wallpaperSegmentBuffer(2 * count);
+  let n = 0;
+  const push = (x1, y1, x2, y2) => {
+    const o = 4 * n++;
+    coords[o] = x1;
+    coords[o + 1] = y1;
+    coords[o + 2] = x2;
+    coords[o + 3] = y2;
+  };
+  for (let i = 0; i < count - 1; i++) push(leftX[i], leftY[i], leftX[i + 1], leftY[i + 1]);
+  push(leftX[count - 1], leftY[count - 1], rightX[0], rightY[0]);
+  for (let i = 0; i < count - 1; i++) push(rightX[i], rightY[i], rightX[i + 1], rightY[i + 1]);
+  const same = Math.max(Math.abs(rightX[count - 1] - rightX[0]), Math.abs(rightY[count - 1] - rightY[0]),
+    Math.abs(leftX[0] - leftX[count - 1]), Math.abs(leftY[0] - leftY[count - 1])) < 1e-6;
+  if (!same) push(rightX[count - 1], rightY[count - 1], leftX[0], leftY[0]);
+  return n;
 }
 
 // Linux mini optimization end.
@@ -490,12 +524,22 @@ const miniVisibleBounds = { left: 0, right: 0, top: 0, bottom: 0 };
 function drawMiniGlowSegments(start, end, width, alpha, blur = 8) {
   if (end - start === 0) return;
   const coords = miniGlowSegmentCoords;
+  const strokeStyle = layerRgba(MINI_CENTRAL_RAY_RGBA, alpha);
+  const lineWidth = structurePx(width, 0.5);
   ctx.save();
-  ctx.strokeStyle = layerRgba(MINI_CENTRAL_RAY_RGBA, alpha);
-  ctx.lineWidth = structurePx(width, 0.5);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
   ctx.lineCap = 'round';
-  ctx.shadowColor = CENTRAL_RAY_GLOW_COLOR;
-  ctx.shadowBlur = structurePx(blur, 1);
+  // PERF-5: the wallpaper stamps every segment's baked shadow (sprites.js, wallpaperLineGlow) and
+  // strokes the segments unshadowed; mini keeps the shadowed stroke.
+  const glow = isMiniVariant ? null
+    : wallpaperLineGlow(lineWidth, strokeStyle, 'round', CENTRAL_RAY_GLOW_COLOR, structurePx(blur, 1));
+  if (glow) {
+    stampWallpaperLineGlows(glow, coords, start, end);
+  } else {
+    ctx.shadowColor = CENTRAL_RAY_GLOW_COLOR;
+    ctx.shadowBlur = structurePx(blur, 1);
+  }
   ctx.beginPath();
   for (let i = start; i < end; i++) {
     const o = i * 4;
@@ -1061,6 +1105,44 @@ function drawCentralOctagon(cx, cy, progress, pulse) {
     ctx.stroke();
   }
 
+  // Linux mini optimization begin (PERF-5): the wallpaper stamps the octagon's glow from baked pulse levels
+  // (sprites.js, wallpaperPulseGlows: the reference stroke and shadow of the regular octagon at rotation 0,
+  // under the ctx rotation) and strokes the octagon below unshadowed. The pulse wobble (at most 2.5% of
+  // the radius, inside a 19-38 px blur) moves the stroke only, not its baked glow.
+  const octagonGlow = isMiniVariant ? null : wallpaperPulseGlows(`octagon|${r}`, (level, scale) => {
+    const lineWidth = 5.1 * (1 + level * 0.72);
+    return bakeShadowLayer(r + lineWidth, r + lineWidth, scale, 'rgba(255,255,245,0.90)', 20 + level * 18, (g) => {
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.strokeStyle = 'rgba(255,255,244,0.95)';
+      g.lineWidth = lineWidth;
+      g.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = -Math.PI / 2 + i * TAU / 8;
+        if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r); else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      g.closePath();
+      g.stroke();
+    });
+  });
+  if (octagonGlow) {
+    stampWallpaperPulseGlow(octagonGlow, pulse);
+    ctx.strokeStyle = 'rgba(255,255,244,0.95)';
+    ctx.lineWidth = 5.1 * miniK * pulseStroke;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = -Math.PI / 2 + i * TAU / 8;
+      const wobble = pulse * r * 0.025 * Math.sin(a * 3 + progress * TAU);
+      const x = Math.cos(a) * (r + wobble);
+      const y = Math.sin(a) * (r + wobble);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  // Linux mini optimization end.
   ctx.strokeStyle = 'rgba(255,255,244,0.95)';
   ctx.lineWidth = 5.1 * miniK * pulseStroke;
   ctx.shadowColor = 'rgba(255,255,245,0.90)';
@@ -1214,12 +1296,29 @@ function drawMiniCentralCore(cx, cy, phase) {
   ctx.restore();
 
   ctx.fillStyle = 'rgba(255,255,245,0.96)';
-  ctx.shadowColor = 'rgba(255,255,245,0.80)';
-  ctx.shadowBlur = structurePx(20, 1);
+  // PERF-5: the wallpaper stamps the disc's baked shadow (sprites.js, stampWallpaperDiscGlow).
+  let coreGlow = false;
+  if (!isMiniVariant) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    coreGlow = stampWallpaperDiscGlow('processing-core', paintCentralCoreDisc, 'rgba(255,255,245,0.80)', structurePx(20, 1), r * 0.88);
+    ctx.restore();
+  }
+  if (!coreGlow) {
+    ctx.shadowColor = 'rgba(255,255,245,0.80)';
+    ctx.shadowBlur = structurePx(20, 1);
+  }
   ctx.beginPath();
   ctx.arc(cx, cy, r * 0.88, 0, TAU);
   ctx.fill();
   ctx.shadowBlur = 0;
+}
+
+function paintCentralCoreDisc(g, radius) {
+  g.fillStyle = 'rgba(255,255,245,0.96)';
+  g.beginPath();
+  g.arc(0, 0, radius, 0, TAU);
+  g.fill();
 }
 
 // Linux mini optimization end.

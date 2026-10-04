@@ -289,3 +289,174 @@ function buildSprites() {
 function ensureSprites() {
   if (spritesStale) buildSprites();
 }
+// Linux mini optimization begin (PERF-5): wallpaper blur-free glows (odd/tasks/wallpaper-microstutters.md).
+// ctx.shadowBlur makes Chromium blur a coverage mask on every draw; on the full-size wallpaper those
+// per-frame blurs cost more than half of every frame. The wallpaper paints each glow from a shadow-only
+// bitmap instead, baked once per geometry with the very canvas shadow the reference draws (same colour,
+// blur, stroke or fill), then paints the shape itself without a shadow: shadow first and shape second,
+// under the same composite operation, as the canvas does. Bitmaps are device-scale (shadowBlur is in
+// device pixels) and are all dropped when the canvas size or backing scale changes. Not pixel-identical:
+// bitmaps are resampled when drawn rotated or stretched, separate segment stamps add up where the
+// reference blurs one union, and pulsing glows blend the two nearest of a few baked pulse levels.
+// The mini variant keeps its shadowBlur paths unchanged.
+const wallpaperGlowCache = { key: null, entries: new Map() };
+const WALLPAPER_PULSE_GLOW_LEVELS = 8;
+// Shadow blur / disc radius is baked in 3% steps; the stamped blur stays within 1.5% of the reference.
+const WALLPAPER_DISC_GLOW_STEP = 1.03;
+const WALLPAPER_DISC_GLOW_RADIUS = 64;
+let wallpaperSegmentCoords = new Float64Array(4 * 64);
+
+// Device pixels per user unit of the scene layers (render() draws them under scale(viewZoom)), or 0 when
+// the backing scale is not uniform (a rotated bitmap needs one scale); callers then keep shadowBlur.
+function wallpaperGlowScale() {
+  return canvasScaleX === canvasScaleY ? canvasScaleX * viewZoom : 0;
+}
+
+function wallpaperGlowEntry(key, bake) {
+  const cache = wallpaperGlowCache;
+  const geometry = `${W}x${H}@${canvasScaleX},${canvasScaleY}`;
+  if (cache.key !== geometry) {
+    cache.key = geometry;
+    cache.entries.clear();
+  }
+  let entry = cache.entries.get(key);
+  if (entry === undefined) {
+    entry = bake();
+    cache.entries.set(key, entry);
+  }
+  return entry;
+}
+
+function wallpaperSegmentBuffer(count) {
+  if (wallpaperSegmentCoords.length < 4 * count) wallpaperSegmentCoords = new Float64Array(4 * count);
+  return wallpaperSegmentCoords;
+}
+
+// Bakes only the canvas shadow of paintShape(g), a shape painted in user units around the origin: the
+// shape is drawn one bitmap width left of the bitmap and shadowOffsetX (device pixels, like shadowBlur)
+// brings its shadow back, so the bitmap holds exactly the shadow the canvas paints under that shape.
+function bakeShadowLayer(halfWidth, halfHeight, scale, shadowColor, shadowBlur, paintShape) {
+  const pad = 2 * shadowBlur + 2;
+  const width = 2 * Math.ceil(halfWidth * scale + pad);
+  const height = 2 * Math.ceil(halfHeight * scale + pad);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const g = canvas.getContext('2d');
+  g.setTransform(scale, 0, 0, scale, width / 2 - width, height / 2);
+  g.shadowColor = shadowColor;
+  g.shadowBlur = shadowBlur;
+  g.shadowOffsetX = width;
+  paintShape(g);
+  return { canvas, hw: width / 2 / scale, hh: height / 2 / scale };
+}
+
+// Draws a baked shadow centred on the current origin, `unit` times its baked size, at alpha times the
+// current globalAlpha (which it leaves unchanged).
+function stampShadowLayer(layer, unit, alpha) {
+  const globalAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = globalAlpha * alpha;
+  ctx.drawImage(layer.canvas, -layer.hw * unit, -layer.hh * unit, 2 * layer.hw * unit, 2 * layer.hh * unit);
+  ctx.globalAlpha = globalAlpha;
+}
+
+// The shadow of a stroked segment, for segments of any length: one horizontal segment, `reach` longer
+// than the shadow's own falloff at each end, is baked once; a segment's glow is its two end slices plus
+// the uniform middle slice stretched in between (the stampGlowLine layout). The end slices are the
+// shadow of a half-line, so with butt caps consecutive segments of a polyline tile into its shadow.
+function wallpaperLineGlow(lineWidth, strokeStyle, lineCap, shadowColor, shadowBlur) {
+  const scale = wallpaperGlowScale();
+  if (!(scale > 0)) return null;
+  return wallpaperGlowEntry(`line|${lineWidth}|${strokeStyle}|${lineCap}|${shadowColor}|${shadowBlur}`, () => {
+    const reach = lineWidth / 2 + (2 * shadowBlur + 2) / scale;
+    const length = 2 * reach + 8 / scale;
+    const layer = bakeShadowLayer(length / 2, lineWidth / 2, scale, shadowColor, shadowBlur, (g) => {
+      g.strokeStyle = strokeStyle;
+      g.lineWidth = lineWidth;
+      g.lineCap = lineCap;
+      g.beginPath();
+      g.moveTo(-length / 2, 0);
+      g.lineTo(length / 2, 0);
+      g.stroke();
+    });
+    return { layer, reach, length };
+  });
+}
+
+// Stamps the glow of segments [start, end) of coords ([x1, y1, x2, y2] per segment, user units). Each
+// stamp gets one setTransform from the current matrix when getTransform is available (else
+// translate/rotate inside save/restore); the current transform is restored afterwards.
+function stampWallpaperLineGlows(glow, coords, start, end) {
+  const { layer, reach, length } = glow;
+  const { canvas, hw, hh } = layer;
+  const k = canvas.width / (2 * hw);
+  const edge = hw - length / 2;
+  const height = canvas.height;
+  const middleX = (edge + reach) * k;
+  const middleWidth = (length - 2 * reach) * k;
+  const base = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  const direct = !!base && Number.isFinite(base.a);
+  ctx.save();
+  for (let i = start; i < end; i++) {
+    const o = i * 4;
+    const x1 = coords[o];
+    const y1 = coords[o + 1];
+    const dx = coords[o + 2] - x1;
+    const dy = coords[o + 3] - y1;
+    const span = Math.hypot(dx, dy);
+    const cos = span > 0 ? dx / span : 1;
+    const sin = span > 0 ? dy / span : 0;
+    if (direct) {
+      ctx.setTransform(base.a * cos + base.c * sin, base.b * cos + base.d * sin,
+        base.c * cos - base.a * sin, base.d * cos - base.b * sin,
+        base.a * x1 + base.c * y1 + base.e, base.b * x1 + base.d * y1 + base.f);
+    } else {
+      ctx.restore();
+      ctx.save();
+      ctx.translate(x1, y1);
+      ctx.rotate(Math.atan2(sin, cos));
+    }
+    const a = Math.min(reach, span / 2);
+    const cap = (edge + a) * k;
+    ctx.drawImage(canvas, 0, 0, cap, height, -edge, -hh, edge + a, 2 * hh);
+    if (span > 2 * a) ctx.drawImage(canvas, middleX, 0, middleWidth, height, a, -hh, span - 2 * a, 2 * hh);
+    ctx.drawImage(canvas, canvas.width - cap, 0, cap, height, span - a, -hh, edge + a, 2 * hh);
+  }
+  ctx.restore();
+}
+
+// A pulsing closed shape's glow: bakeLevel(p, scale) bakes its shadow at pulse p for the
+// WALLPAPER_PULSE_GLOW_LEVELS + 1 levels p = i / LEVELS (all at once, so later frames never bake).
+function wallpaperPulseGlows(key, bakeLevel) {
+  const scale = wallpaperGlowScale();
+  if (!(scale > 0)) return null;
+  return wallpaperGlowEntry(`pulse|${key}`, () =>
+    Array.from({ length: WALLPAPER_PULSE_GLOW_LEVELS + 1 }, (_, i) => bakeLevel(i / WALLPAPER_PULSE_GLOW_LEVELS, scale)));
+}
+
+// Stamps the glow at `pulse` (0..1) centred on the current origin: level 0 alone between pulses, else the
+// two nearest levels blended by the pulse's position between them.
+function stampWallpaperPulseGlow(levels, pulse) {
+  const t = Math.min(1, Math.max(0, pulse)) * WALLPAPER_PULSE_GLOW_LEVELS;
+  const i = Math.min(WALLPAPER_PULSE_GLOW_LEVELS - 1, Math.floor(t));
+  const f = t - i;
+  if (f < 1) stampShadowLayer(levels[i], 1, 1 - f);
+  if (f > 0) stampShadowLayer(levels[i + 1], 1, f);
+}
+
+// The shadow of a filled disc of `radius` (user units) centred on the current origin. A disc's shadow
+// scales with the disc when its blur scales too, so one bake at WALLPAPER_DISC_GLOW_RADIUS per 3% step of
+// shadowBlur / radius serves every radius. paintDisc(g, radius) fills the disc on the bake context.
+function stampWallpaperDiscGlow(fillKey, paintDisc, shadowColor, shadowBlur, radius) {
+  const scale = wallpaperGlowScale();
+  if (!(scale > 0) || !(radius > 0) || !(shadowBlur > 0)) return false;
+  const step = Math.round(Math.log(shadowBlur / (radius * scale)) / Math.log(WALLPAPER_DISC_GLOW_STEP));
+  const bakeRadius = WALLPAPER_DISC_GLOW_RADIUS;
+  const layer = wallpaperGlowEntry(`disc|${fillKey}|${shadowColor}|${step}`, () =>
+    bakeShadowLayer(bakeRadius, bakeRadius, scale, shadowColor, bakeRadius * scale * WALLPAPER_DISC_GLOW_STEP ** step,
+      (g) => paintDisc(g, bakeRadius)));
+  stampShadowLayer(layer, radius / bakeRadius, 1);
+  return true;
+}
+
+// Linux mini optimization end.
