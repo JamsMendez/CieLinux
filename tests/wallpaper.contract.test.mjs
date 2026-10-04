@@ -21,6 +21,8 @@ const wallpaperBranch = prepare.slice(prepare.indexOf('if (wallpaper) {'), prepa
 
 test('wallpaper attachment: bottom layer, every edge, zone -1, opaque, full-size page, no mini parts', () => {
     assert.match(wallpaperBranch, /layer->setLayer\(LayerShellQt::Window::LayerBottom\);/);
+    // Never the background layer: the desktop's own wallpaper shares it and may draw on top.
+    assert.doesNotMatch(prepare, /LayerShellQt::Window::LayerBackground/);
     for (const edge of ['AnchorTop', 'AnchorBottom', 'AnchorLeft', 'AnchorRight'])
         assert.ok(wallpaperBranch.includes(edge), edge);
     assert.match(wallpaperBranch, /layer->setMargins\(QMargins\(\)\);/);
