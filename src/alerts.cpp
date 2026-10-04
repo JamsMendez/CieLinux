@@ -368,6 +368,12 @@ AlertQueue::AlertQueue(qint64 maxAgeMs, Diagnostic onDiagnostic, qint64 holdMaxM
 
 quint64 AlertQueue::enqueue(const AlertCommand &command, qint64 nowMs) {
     dropExpired(nowMs);
+    if (command.held() && suspended) {
+        // At most one held warning is alive: the suspended one still comes back, so a second one
+        // would coexist with it, and a later failed request would have two to suspend.
+        diagnostic(QStringLiteral("alert ignored: a held warning is already suspended"));
+        return 0;
+    }
     const bool showing = current && nowMs < current->endsAtMs;
     if (showing && current->command.held() && command.hasFailed()) {
         // A failure is interesting exactly while a question waits: it takes the held warning's
@@ -493,9 +499,11 @@ void AlertDriver::update(const AlertSurface *surface, bool covered) {
     displayed = active->serial;
     // H4: a held warning's first repeat comes heldWarningRepeatMs after this show or resume.
     if (active->command.held()) repeatAt = shownAtMs + heldWarningRepeatMs;
-    // A re-show, or a held warning resuming after a failed alert, is never announced twice.
-    if (announced == active->serial || announcedBefore == active->serial) return;
-    announcedBefore = std::exchange(announced, active->serial);
+    // A re-show, or a held warning resuming after any number of failed alerts, is never announced
+    // twice; one preempted before it ever showed is announced when it first shows.
+    if (announced == active->serial || announcedHeld == active->serial) return;
+    announced = active->serial;
+    if (active->command.held()) announcedHeld = active->serial;
     bool failed = false;
     for (const AlertGroup &group : active->command.groups) failed = failed || group.kind == AlertKind::Failed;
     emit alertShown(alertKindName(failed ? AlertKind::Failed : AlertKind::Warning));
