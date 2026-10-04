@@ -19,7 +19,7 @@ void main() {
 }`;
 
 const NEBULA_FRAGMENT_SHADER = `
-precision mediump float;
+precision highp float;
 uniform vec2 u_resolution;
 uniform float u_rotation;
 uniform float u_drift;

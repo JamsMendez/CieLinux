@@ -136,7 +136,8 @@ const referenceSha256 = {
     // CielWin reference: 84cce57bef22a17d9a41f4f9b91cd7c7bfeaa0f485ed082a76643aa7f0c3a405
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 4af337720deb49ec9664ed42721326d8896b39baeb65e02189d27da51888cf35
     layers: '8a426f212cd6c6326be3befe2a61d1e1b1413af5e8114e04b5c5225ee97ca6d4',
-    nebula: '0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162',
+    // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162
+    nebula: 'eac31e99953bd84950cee77603243e6ed2dccea0598f1e68cb3ad59d57f42d25',
 };
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 

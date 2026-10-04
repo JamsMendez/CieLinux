@@ -44,7 +44,8 @@ const referenceSha256 = {
 };
 // Reference nebula.js minus its two unbounded console.error lines, which the diagnostics replace.
 // Re-pinned after old-name→CielWin comment rename (text-only); was c1ba2023e1b91580bfb5ac671215cd8e840d0387c07125358da17f98d35d6576
-const nebulaWithoutReferenceLogsSha256 = '102512cbbe59fa4f8295e8407c628017a2178abaafe059b4943911cd0f7fb19d';
+// Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 102512cbbe59fa4f8295e8407c628017a2178abaafe059b4943911cd0f7fb19d
+const nebulaWithoutReferenceLogsSha256 = '955b3f192e0e774830bc243713c4c00d6c6d993a3b26e5d8a56539ddc15ff9fe';
 const kept = ['drawGlyphRings', 'drawGoldenHexadecagon', 'drawPerspectiveRays', 'drawCentralCore'];
 const skipped = ['drawFeathers', 'drawSoftOvalFields', 'drawCircularOvalFields', 'drawStars',
     'drawRadialStreaks', 'drawLensFlares', 'drawChromaticSideLoops', 'drawFilmGrain', 'drawVignette',
