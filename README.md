@@ -449,7 +449,10 @@ example while a program waits for your answer. `duration: 0` is accepted only wi
   the 5-minute start limit).
 - **One at a time:** at most one held warning exists. A held warning sent while another
   one shows, waits or is suspended is ignored (plain `202 ok`, no id), so a later failed
-  request never displaces the suspended one.
+  request never displaces the suspended one. The ignored request is dropped, not
+  queued: it never shows, even after the first one is cleared. A client that sees
+  `202 ok` without an id knows its warning was not taken and has nothing to clear;
+  it can send it again once the first one is gone.
 
 ### Writing a client
 
