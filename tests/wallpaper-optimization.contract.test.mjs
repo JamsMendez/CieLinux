@@ -139,6 +139,28 @@ for (const scene of ['idle', 'explorer']) {
         assert.notEqual(h.evaluate('vignetteGradientCache.gradient'), vignette, 'rebuilt on resize');
         assert.deepEqual(json(h.evaluate('[vignetteGradientCache.width, vignetteGradientCache.height]')), [800, 400]);
     });
+
+    // A gradient that fails to build must not leave a dangling save(): the failing frame is caught by the render
+    // loop, and an unbalanced save would grow the canvas state stack on every failing frame.
+    test(`${scene} vignette: a throwing createRadialGradient leaves save/restore balanced, and the next frame fills`, () => {
+        const h = harness(scene);
+        let throws = 1, saves = 0, restores = 0, fills = 0;
+        const context = {
+            save() { saves++; },
+            restore() { restores++; },
+            fillRect() { fills++; },
+            createRadialGradient() {
+                if (throws > 0) { throws--; throw new Error('createRadialGradient failed'); }
+                return { addColorStop() {} };
+            },
+        };
+        assert.throws(() => h.sandbox.drawVignette(context), /createRadialGradient failed/);
+        assert.equal(saves, restores, `balanced after the failing frame (${saves} saves, ${restores} restores)`);
+        assert.equal(fills, 0, 'nothing filled on the failing frame');
+        h.sandbox.drawVignette(context);
+        assert.equal(saves, restores, 'balanced after the next frame');
+        assert.equal(fills, 1, 'the next frame fills the vignette');
+    });
 }
 
 test('explorer full frame: vignette and blue layer fill the reference gradients', () => {

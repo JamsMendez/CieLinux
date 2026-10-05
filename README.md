@@ -734,7 +734,7 @@ node --test tests/*.test.mjs                 # from CieLinux/
 node --test CieLinux/tests/*.test.mjs        # from the repository root
 ```
 
-36 contract test files, 348 tests. They read the sources and compile small native
+36 contract test files, 350 tests. They read the sources and compile small native
 harnesses against `src/` (they need the same Qt and CMake toolchain as the build).
 `tests/paths.mjs` maps file names to `src/` and `scenes/`.
 
