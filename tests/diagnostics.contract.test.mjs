@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { SRC, source, nativeOutput } from './paths.mjs';
+import { SRC, source } from './paths.mjs';
 
 const root = SRC;
 const read = name => readFileSync(source(name), 'utf8');
@@ -35,8 +35,7 @@ int main() {
     const run = spawnSync(binary, [], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     assert.equal(run.stdout, '');
-    const stderr = nativeOutput(run.stderr);
-    const lines = stderr.trimEnd().split('\n');
+    const lines = run.stderr.trimEnd().split('\n');
     assert.equal(lines[0], 'CIELINUX_DIAGNOSTICS_HOST_START');
     assert.equal(lines[1], 'CIELINUX_DIAGNOSTICS_JS severity=error source=qrc:/processing/js/main.js line=42 message=A???????Z');
     assert.match(lines[2], /severity=unknown source=<unknown> line=0 message=unknown$/);
@@ -47,8 +46,8 @@ int main() {
     assert.equal(lines.filter(line => line === 'CIELINUX_DIAGNOSTICS_CONSOLE_CAP').length, 1);
     assert.equal(lines.filter(line => line.startsWith('CIELINUX_DIAGNOSTICS_HOST_FAILURE')).length, 1);
     assert.ok(lines.every(line => Buffer.byteLength(line + '\n') <= 768));
-    assert.ok(Buffer.byteLength(stderr) <= 64 * 768 + 256);
-    assert.doesNotMatch(stderr, /SECRET|fragment|private|[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+    assert.ok(Buffer.byteLength(run.stderr) <= 64 * 768 + 256);
+    assert.doesNotMatch(run.stderr, /SECRET|fragment|private|[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
 });
 
 test('lifecycle has an independent fixed numeric bounded stderr format', () => {
@@ -64,13 +63,12 @@ int main() {
     const run = spawnSync(join(dir, 'sink'), [], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     assert.equal(run.stdout, '');
-    const stderr = nativeOutput(run.stderr);
-    const lines = stderr.trimEnd().split('\n');
+    const lines = run.stderr.trimEnd().split('\n');
     assert.equal(lines.length, 49);
     assert.equal(lines.at(-1), 'CIELINUX_LIFECYCLE_CAP');
     lines.slice(0, -1).forEach((line, i) => assert.equal(line,
         `CIELINUX_LIFECYCLE_V1 seq=${i + 1} event=renderer_pid gen=1 a=2147483647 b=-2147483647 c=0`));
-    assert.ok(Buffer.byteLength(stderr) <= 48 * 192 + 32);
+    assert.ok(Buffer.byteLength(run.stderr) <= 48 * 192 + 32);
 });
 
 test('production QML forwards actual PID notifier and immutable termination details', () => {
