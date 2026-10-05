@@ -776,8 +776,9 @@ function cachedVignetteGradient(context) {
 function drawVignette(context) {
   // Linux wallpaper optimization begin (W1): cached gradient (see cachedVignetteGradient).
   if (typeof context.createRadialGradient === 'function') {
+    const gradient = cachedVignetteGradient(context); // before save(): a throw leaves no dangling save
     context.save();
-    context.fillStyle = cachedVignetteGradient(context);
+    context.fillStyle = gradient;
     context.fillRect(0, 0, W, H);
     context.restore();
     return;
