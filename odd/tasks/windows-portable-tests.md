@@ -4,7 +4,7 @@
 Make the non-Qt6 contract tests pass when the suite runs on a Windows dev checkout, without weakening
 what they verify on Linux. Linux stays the source of truth: every assertion must still run there.
 
-Status: **closed.** Fixes applied and verified on Linux; Windows verification dropped (development is Linux-only from now on). Verdict: no product
+Status: **closed, fixes reverted.** Development is Linux-only, so the win32 guards were dead code; commit `7af0781` was reverted. Verdict: no product
 bug, every failure is test portability (see Progress).
 
 ## Context
@@ -52,6 +52,8 @@ bug, every failure is test portability (see Progress).
 - Linux: 4 touched files 28/28 pass, no assertion removed or skipped; full suite 350/350 pass.
 - `tests/paths.mjs`: `POSIX_MODES` and `nativeOutput()` (normalizes `\r\n` only on win32).
 - Branch `fix/windows-portable-tests`, merged into `main` with `--no-ff`.
+
+- Reverted `7af0781` (user decision, 2026-10-04): the Windows branches were never exercised on Linux.
 
 ## Next step
 None. Native review approved and acknowledged (`review-f42448d184b16b5f`).

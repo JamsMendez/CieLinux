@@ -25,13 +25,3 @@ export function source(name) {
 export function readText(path) {
     return readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 }
-
-// NTFS has no POSIX permission bits: chmod is a no-op there and stat reports 0o666. Mode
-// assertions run only where the bits exist; on Linux they keep their full strength.
-export const POSIX_MODES = process.platform !== 'win32';
-
-// A MinGW build writes stdout/stderr in CRT text mode on Windows, turning each `\n` into `\r\n`.
-// Normalize only there, so a stray `\r` from a native program still fails on Linux.
-export function nativeOutput(text) {
-    return process.platform === 'win32' ? text.replace(/\r\n/g, '\n') : text;
-}
