@@ -4,7 +4,7 @@
 Make the non-Qt6 contract tests pass when the suite runs on a Windows dev checkout, without weakening
 what they verify on Linux. Linux stays the source of truth: every assertion must still run there.
 
-Status: **fixes applied and verified on Linux; Windows verification pending.** Verdict: no product
+Status: **closed.** Fixes applied and verified on Linux; Windows verification dropped (development is Linux-only from now on). Verdict: no product
 bug, every failure is test portability (see Progress).
 
 ## Context
@@ -45,8 +45,8 @@ bug, every failure is test portability (see Progress).
       were not re-run on Windows.
 - [x] W2 Apply the test-side fixes above; no changes under `src/`, `scenes/` or `integrations/` (no
       product bug found). Route: inline (small, mechanical, already-understood edits).
-- [ ] W3 Verify on Linux (touched files + full suite) and on Windows (touched files + full suite).
-      Linux done; Windows pending.
+- [x] W3 Verify on Linux (touched files + full suite). Windows verification dropped by user decision
+      (2026-10-04): all work happens on Linux.
 
 ## Progress
 - Linux: 4 touched files 28/28 pass, no assertion removed or skipped; full suite 350/350 pass.
@@ -54,5 +54,4 @@ bug, every failure is test portability (see Progress).
 - Branch `fix/windows-portable-tests`, merged into `main` with `--no-ff`.
 
 ## Next step
-On Windows: pull `main`, run the 4 files (expect the 9 targeted tests to pass, the NTFS-path one as a skip; only Qt6/CMake harness tests may still fail), then the full
-suite (expect only the Qt6/CMake harness failures). Then check off W3.
+None. Native review approved and acknowledged (`review-f42448d184b16b5f`).
