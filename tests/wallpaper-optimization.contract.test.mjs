@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import vm from 'node:vm';
-import { SCENES } from './paths.mjs';
+import { SCENES, readText } from './paths.mjs';
 
 // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md): wallpaper CPU of the explorer and idle scenes and of the
 // alert overlay drawn over them. Every W1 change lives in marked blocks that only add lines:
@@ -16,7 +15,7 @@ import { SCENES } from './paths.mjs';
 // WALLOPT_SCENES=<scenes dir> runs these tests against another tree (used to observe RED on the pre-W1 copy).
 
 const ROOT = process.env.WALLOPT_SCENES || SCENES;
-const read = name => readFileSync(join(ROOT, name), 'utf8');
+const read = name => readText(join(ROOT, name));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const json = value => JSON.parse(JSON.stringify(value));
 const count = (ops, name) => ops.filter(op => op[0] === name).length;

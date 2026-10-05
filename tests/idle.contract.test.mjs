@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { source } from './paths.mjs';
+import { readText, source } from './paths.mjs';
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const exists = name => existsSync(source(name));
 const html = exists('idle/index.html') ? read('idle/index.html') : '';
@@ -26,7 +26,7 @@ const referenceSha256 = {
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88; CielWin reference: aec872a4c6ea50409cfed6cd15a93593b1e267628079edffbd57447b6ee87d5c
     earth: 'ab076276fc5d037782f9228699881d19fc8ea7e242ba59dcd494099faa46bb1d',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: 7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70; CielWin reference: 1dde4516d984afabfe84aeca85e17f8496dd15221a91eb7ae8e75ce7c6aae9d5
-    rings: '4069f9e540d92e24874e94c866b18986a2c7c18ade6eebe63424cbf737e3b79e',
+    rings: 'cebf294e99feae3defdafa3cba29d6375774ed2d5f1a5803a5d35206843431ae',
     // Re-pinned after old-name→CielWin comment rename (text-only); was 231a4faf26467d05f206301f69b0613f0974ade0c43e680685c911961724f3ae
     main: '15f472543e2d53fab4157ade61bcda125be14306d3d3dc12d2e7ab7288ace698',
 };
