@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Script, createContext } from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { SRC, source, nativeOutput } from './paths.mjs';
 const cpp = readFileSync(source('main.cpp'), 'utf8');
 
 // Compile the actual Policy, without a GUI or a copied state machine.
@@ -551,7 +551,7 @@ int main() {
     assert.equal(compile.status, 0, compile.stderr);
     const run = spawnSync(binary, [], { encoding: 'utf8', timeout: 5000 });
     assert.equal(run.status, 0, run.stderr);
-    const lines = run.stderr.trimEnd().split('\n');
+    const lines = nativeOutput(run.stderr).trimEnd().split('\n');
     let sequence = 0;
     const stages = [2, 2, 1, 3, 3, 4, 4];
     for (let i = 0; i < lines.length; i += 2) {

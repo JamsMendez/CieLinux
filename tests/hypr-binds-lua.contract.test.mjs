@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT } from './paths.mjs';
+import { ROOT, POSIX_MODES } from './paths.mjs';
 
 const install = join(ROOT, 'install.sh');
 const uninstall = join(ROOT, 'uninstall.sh');
@@ -76,7 +76,7 @@ test('Lua mode: insert, idempotent refresh, user lines and mode kept, uninstall 
     assert.equal(count(text, LUA_BEGIN), 1);
     assert.equal(count(text, LUA_END), 1);
     assert.ok(text.includes(`${LUA_BEGIN}\no.bind("SUPER + Z", "CieLinux mini: next position", "'/home/me/.local/bin/cielinux' --cycle-position next")\no.bind("SUPER + SHIFT + Z", "CieLinux mini: previous position", "'/home/me/.local/bin/cielinux' --cycle-position prev")\n${LUA_END}\n`), text);
-    assert.equal(statSync(file).mode & 0o777, 0o640);
+    if (POSIX_MODES) assert.equal(statSync(file).mode & 0o777, 0o640);
     assert.ok(!existsSync(join(dir, 'bindings.conf')));
     const removed = uninstallBinds(dir);
     assert.equal(removed.status, 0, removed.stderr);
@@ -94,7 +94,7 @@ test('Lua mode: migration removes the old hyprlang block from bindings.conf', ()
     const result = installBinds(dir, '/usr/bin');
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(conf, 'utf8'), confUser);
-    assert.equal(statSync(conf).mode & 0o777, 0o600);
+    if (POSIX_MODES) assert.equal(statSync(conf).mode & 0o777, 0o600);
     assert.equal(count(readFileSync(join(dir, 'bindings.lua'), 'utf8'), LUA_BEGIN), 1);
     // Both files carry a block: uninstall clears both.
     writeFileSync(conf, confUser + CONF_BEGIN + '\nx\n' + CONF_END + '\n');
@@ -110,7 +110,7 @@ test('Lua mode: bindings.lua is created only when hyprland.lua requires it', () 
     const file = join(dir, 'bindings.lua');
     assert.ok(existsSync(file));
     assert.equal(readFileSync(file, 'utf8').startsWith(LUA_BEGIN + '\n'), true);
-    assert.equal(statSync(file).mode & 0o777, 0o644);
+    if (POSIX_MODES) assert.equal(statSync(file).mode & 0o777, 0o644);
 
     const bare = mkdtempSync(join(fixture, 'hypr-lua-bare.'));
     writeFileSync(join(bare, 'hyprland.lua'), 'require("default.hypr.omarchy")\n');
@@ -132,7 +132,9 @@ test('Lua mode: a broken (unterminated) block is refused and nothing is written'
     assert.equal(readFileSync(join(dir, 'bindings.lua'), 'utf8'), broken);
 });
 
-test('Lua mode: a path with a space, quotes and a backslash survives Lua and sh quoting', () => {
+test('Lua mode: a path with a space, quotes and a backslash survives Lua and sh quoting', {
+    skip: process.platform === 'win32' && 'NTFS forbids `"` in file names and treats `\\` as a separator: the fixture path cannot exist',
+}, () => {
     const dir = luaDir('');
     const bindir = join(fixture, `it's "here" \\ now`, 'bin');
     mkdirSync(bindir, { recursive: true });
