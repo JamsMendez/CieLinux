@@ -8,7 +8,7 @@ switches between them live.
 | Mode | `wallpaper-mode` | What you see |
 | --- | --- | --- |
 | Mini (default) | `scene-mini` | A 240 px always-on-top overlay at one of eight positions, see-through by brightness. |
-| Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the background layer, paused under fullscreen windows. |
+| Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the bottom layer, paused under fullscreen windows. |
 
 Choose **Frame rate ▸ 30 FPS or 60 FPS** in the tray. One persisted global cap
 (default: **30 FPS**) follows every scene and both modes. See [Frame rate](#frame-rate).
@@ -214,7 +214,7 @@ The socket is `$XDG_RUNTIME_DIR/cielinux/control.sock`:
 `wallpaper-mode = scene` (or `--mode scene`, or **Wallpaper mode ▸ Scene wallpaper** in
 the tray) shows the scene as the desktop wallpaper:
 
-- The full-size page (no mini variant) at the global frame-rate cap on the layer-shell **background**
+- The full-size page (no mini variant) at the global frame-rate cap on the layer-shell **bottom**
   layer of the selected output, anchored to every edge with exclusive zone -1, so it
   also extends under bars.
 - Opaque, ignores input, and has none of the mini's parts (no luminance key, no
@@ -449,7 +449,10 @@ example while a program waits for your answer. `duration: 0` is accepted only wi
   the 5-minute start limit).
 - **One at a time:** at most one held warning exists. A held warning sent while another
   one shows, waits or is suspended is ignored (plain `202 ok`, no id), so a later failed
-  request never displaces the suspended one.
+  request never displaces the suspended one. The ignored request is dropped, not
+  queued: it never shows, even after the first one is cleared. A client that sees
+  `202 ok` without an id knows its warning was not taken and has nothing to clear;
+  it can send it again once the first one is gone.
 
 ### Writing a client
 

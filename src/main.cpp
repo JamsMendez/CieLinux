@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
                   << "       " << argv[0] << " --cycle-position next|prev\n"
                   << "Scene and mode default to settings.conf (scene, wallpaper-mode); flags win.\n"
                   << "Mode scene-mini (default) is the small overlay; scene is the full-screen animated wallpaper\n"
-                  << "on the background layer. The tray's Wallpaper mode menu switches between them live.\n"
+                  << "on the bottom layer. The tray's Wallpaper mode menu switches between them live.\n"
                   << "Duration defaults to 15 seconds; only 15 or 120 accepted.\n"
                   << "Resident omits the deadline; it cannot be paired with --duration.\n"
                   << "No Chromium or Qt override arguments accepted.\n"
@@ -471,9 +471,11 @@ int main(int argc, char **argv) {
         if (!layer) { qCritical("LayerShellQt unavailable"); return 2; }
         layer->setScope(QStringLiteral("cielinux"));
         if (wallpaper) {
-            // Full-size page on the background layer of the same output, anchored to
+            // Full-size page on the bottom layer of the same output, anchored to
             // every edge so the compositor sizes it; -1 also extends under bars.
-            layer->setLayer(LayerShellQt::Window::LayerBackground);
+            // Bottom, not Background: the desktop's own wallpaper (omarchy-background)
+            // shares the background layer, where stacking order is unspecified.
+            layer->setLayer(LayerShellQt::Window::LayerBottom);
             layer->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorTop)
                               | LayerShellQt::Window::AnchorBottom | LayerShellQt::Window::AnchorLeft
                               | LayerShellQt::Window::AnchorRight);
