@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT } from './paths.mjs';
+import { ROOT, POSIX_MODES } from './paths.mjs';
 
 const install = join(ROOT, 'install.sh');
 const uninstall = join(ROOT, 'uninstall.sh');
@@ -41,9 +41,9 @@ test('target: Omarchy bindings.conf first, else hyprland.conf, else none', () =>
     const target = () => bash(install, 'hypr_binds_target "$1"', dir).stdout.trim();
     assert.equal(target(), '');
     writeFileSync(join(dir, 'hyprland.conf'), 'source = ~/.config/hypr/bindings.conf\n');
-    assert.equal(target(), join(dir, 'hyprland.conf'));
+    assert.equal(target(), `${dir}/hyprland.conf`); // the script builds "$dir/<file>"
     writeFileSync(join(dir, 'bindings.conf'), 'bindd = SUPER, RETURN, Terminal, exec, $terminal\n');
-    assert.equal(target(), join(dir, 'bindings.conf'));
+    assert.equal(target(), `${dir}/bindings.conf`); // the script builds "$dir/<file>"
 });
 
 test('add is idempotent, keeps the user lines and mode, and remove restores the file exactly', () => {
@@ -59,7 +59,7 @@ test('add is idempotent, keeps the user lines and mode, and remove restores the 
     assert.equal(text.split(END).length - 1, 1);
     assert.match(text, /^bindd = SUPER, Z, CieLinux mini: next position, exec, '\/home\/me\/\.local\/bin\/cielinux' --cycle-position next$/m);
     assert.match(text, /^bindd = SUPER SHIFT, Z, CieLinux mini: previous position, exec, '\/home\/me\/\.local\/bin\/cielinux' --cycle-position prev$/m);
-    assert.equal(statSync(file).mode & 0o777, 0o640);
+    if (POSIX_MODES) assert.equal(statSync(file).mode & 0o777, 0o640);
     // A new prefix replaces the block rather than adding a second one.
     assert.equal(add(file, "/opt/it's here/bin").status, 0);
     const moved = readFileSync(file, 'utf8');
