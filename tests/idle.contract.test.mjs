@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { source } from './paths.mjs';
+import { readText, source } from './paths.mjs';
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const exists = name => existsSync(source(name));
 const html = exists('idle/index.html') ? read('idle/index.html') : '';

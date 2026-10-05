@@ -16,9 +16,9 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { connect } from 'node:net';
 import vm from 'node:vm';
-import { ROOT, SRC, source } from './paths.mjs';
+import { ROOT, SRC, readText, source } from './paths.mjs';
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 let binary, fixture;
 
 const harnessEnv = () => {

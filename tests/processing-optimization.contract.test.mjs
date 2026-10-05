@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { SRC, readText, source } from './paths.mjs';
 
 // O2 (odd/tasks/mini-scene-optimization.md): processing mini CPU/memory optimizations. Each change is
 // compared against verbatim copies of the pre-optimization CielWin functions (REFERENCE below) on
@@ -11,7 +10,7 @@ import { SRC, source } from './paths.mjs';
 // pixels or the JavaScript heap, so allocation savings are shown through proxies (calls into the
 // allocating reference helpers and string-keyed cache lookups per frame).
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const strip = source => source.replace(/^[ \t]*\/\/ Linux mini optimization begin[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux mini optimization end\.\n/gm, '');
 

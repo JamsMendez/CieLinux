@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { source } from './paths.mjs';
+import { readText, source } from './paths.mjs';
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const html = read('processing/index.html');
 const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(match => match[1]);
 const renderFiles = ['config', 'math', 'nebula', 'sphere', 'scene-data', 'sprites', 'layers'];

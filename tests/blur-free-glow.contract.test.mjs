@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { source } from './paths.mjs';
+import { readText, source } from './paths.mjs';
 
 // PERF-5 (odd/tasks/wallpaper-microstutters.md): the full wallpaper paints no per-frame canvas shadow.
 // Every glow the reference draws with ctx.shadowBlur comes from a shadow-only bitmap baked once per
@@ -11,7 +10,7 @@ import { source } from './paths.mjs';
 // "Linux mini optimization" block stripped (pinned by the O2/O3 hash tests). The mocks record Canvas2D
 // calls and track the transform; they do not model pixels (the visual check is the user's).
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const strip = text => text.replace(/^[ \t]*\/\/ Linux mini optimization begin[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux mini optimization end\.\n/gm, '');
 const STRIPPED = new Set(['js/layers.js', 'js/sprites.js']);
 

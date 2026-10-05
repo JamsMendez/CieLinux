@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { SRC, readText, source } from './paths.mjs';
 
 // O1c / P1 (odd/tasks/mini-scene-optimization.md): user-approved visual-risk change. In mini, every
 // rising spark older than RISING_SPARK_TRAIL_SECONDS is drawn as two rotated sprites (trail halves split
@@ -15,7 +14,7 @@ import { SRC, source } from './paths.mjs';
 // bake and young sparks) instead of RISING_SPARK_HEAD_RADIUS = 1.3; full keeps 1.3. O1d blocks only add
 // lines, so stripping the O1c and O1d blocks still restores the O1b file byte for byte.
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const O1B_SHA256 = 'af1b6a3ebbb98ef7006839ab03f9967c6ae6191d98a113bfe0fde54a31930211';
 // W1 blocks (odd/tasks/wallpaper-explorer-idle-cpu.md) are stripped too: they only add lines.

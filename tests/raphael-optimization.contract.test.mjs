@@ -1,16 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
-import { SRC, source } from './paths.mjs';
+import { SRC, readText, source } from './paths.mjs';
 
 // O3 (odd/tasks/mini-scene-optimization.md): raphael mini CPU/memory optimizations. Each change is
 // compared against verbatim copies of the pre-optimization CielWin functions (REFERENCE below) on
 // recorded Canvas2D call streams. The mocks record API calls; they do not model pixels, so resampling
 // differences of baked bitmaps are argued in the feature document, not measured here.
 
-const read = name => readFileSync(source(name), 'utf8');
+const read = name => readText(source(name));
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 
 // Verbatim pre-O3 layers.js/sprites.js functions (CielWin reference). They draw on the module-global
