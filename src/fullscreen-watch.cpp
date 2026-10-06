@@ -119,6 +119,27 @@ bool affectsReserved(const QByteArray &eventName) {
     return names.contains(eventName);
 }
 
+std::optional<QPoint> monitorOrigin(const QByteArray &monitorsJson, const QString &monitor) {
+    const QJsonDocument doc = QJsonDocument::fromJson(monitorsJson);
+    if (!doc.isArray()) return std::nullopt;
+    for (const QJsonValue &value : doc.array()) {
+        const QJsonObject object = value.toObject();
+        if (object.value(QStringLiteral("name")).toString() != monitor) continue;
+        const QJsonValue x = object.value(QStringLiteral("x")), y = object.value(QStringLiteral("y"));
+        if (!x.isDouble() || !y.isDouble()) return std::nullopt;
+        return QPoint(x.toInt(), y.toInt());
+    }
+    return std::nullopt;
+}
+
+std::optional<QPoint> cursorPosition(const QByteArray &cursorJson) {
+    const QJsonObject object = QJsonDocument::fromJson(cursorJson).object();
+    const QJsonValue x = object.value(QStringLiteral("x")), y = object.value(QStringLiteral("y"));
+    if (!x.isDouble() || !y.isDouble()) return std::nullopt;
+    // Hyprland may report sub-pixel positions; the mini's geometry is whole logical px.
+    return QPoint(qRound(x.toDouble()), qRound(y.toDouble()));
+}
+
 } // namespace HyprlandIpc
 
 FullscreenWatch::FullscreenWatch(QString monitor, Trace trace, QObject *parent)
@@ -296,6 +317,8 @@ void FullscreenWatch::runQuery() {
         // B9: the reserved zones ride along; an unreadable answer keeps the last known ones.
         const auto reserved = MiniPlacement::parseHyprlandReserved(*monitors, m_monitor);
         if (reserved) m_reserved = reserved;
+        // The hover dodge maps the cursor onto this output with the origin from the same answer.
+        if (const auto origin = HyprlandIpc::monitorOrigin(*monitors, m_monitor)) m_origin = origin;
         // B10: coverage off (mini) needs the reserved zones only, and is never covered. B12: an
         // unreadable answer is a failed query there too (logged once, retried).
         if (!m_coverage) { finishQuery(reserved ? std::optional<bool>(false) : std::nullopt); return; }
@@ -305,6 +328,16 @@ void FullscreenWatch::runQuery() {
             finishQuery(clients ? HyprlandIpc::fullscreenCovers(*monitors, *clients, m_monitor) : std::nullopt);
         });
     });
+}
+
+bool FullscreenWatch::queryCursor(std::function<void(std::optional<QPoint>)> done) {
+    if (!m_connected || !m_origin) return false;
+    request("j/cursorpos", [this, done = std::move(done), generation = m_generation](std::optional<QByteArray> answer) {
+        // A dropped connection's answer (and the origin it was meant for) says nothing.
+        const auto cursor = answer && generation == m_generation ? HyprlandIpc::cursorPosition(*answer) : std::nullopt;
+        done(cursor && m_origin ? std::optional<QPoint>(*cursor - *m_origin) : std::nullopt);
+    });
+    return true;
 }
 
 void FullscreenWatch::request(const QByteArray &command, std::function<void(std::optional<QByteArray>)> done) {

@@ -12,6 +12,7 @@
 #include "alerts.h"
 #include "alert-bridge.h"
 #include "alert-sounds.h"
+#include "mini-dodge.h"
 #include "mini-position.h"
 #include "instance-control.h"
 #include "fullscreen-watch.h"
@@ -366,6 +367,20 @@ int main(int argc, char **argv) {
     MiniGlider miniGlider([&glideClock] { return glideClock.elapsed(); }, [&] {
         return screen->size().shrunkBy(fullscreenWatch.reserved().value_or(QMargins()));
     });
+    // Hover dodge: the mini takes no pointer input, so while it is shown the cursor is polled from
+    // Hyprland (j/cursorpos every 100 ms, one request at a time, asynchronous) and the window
+    // glides aside when the cursor comes near, back once it has gone. The cursor is mapped onto
+    // the output by the watch and into the usable area here (minus the reserved left/top).
+    // Without Hyprland there is no cursor and no dodge. The saved position never changes.
+    MiniDodger miniDodger(miniGlider, [&glideClock] { return glideClock.elapsed(); }, [&] {
+        return screen->size().shrunkBy(fullscreenWatch.reserved().value_or(QMargins()));
+    }, [&](MiniDodger::Answer done) {
+        return fullscreenWatch.queryCursor([&fullscreenWatch, done](std::optional<QPoint> cursor) {
+            const QMargins reserved = fullscreenWatch.reserved().value_or(QMargins());
+            done(cursor ? std::optional<QPoint>(*cursor - QPoint(reserved.left(), reserved.top())) : std::nullopt);
+        });
+    }, [&] { return !policy.closed() && sceneHost.mode() == QStringLiteral("scene-mini"); },
+    [](const QString &line) { qInfo("CIELINUX_MINI %s", qPrintable(line)); });
     // SUPER+Z / SUPER+SHIFT+Z run `cielinux --cycle-position next|prev`, which lands here
     // (CielWin OnHotkey): refused outside the mini or before its window exists; a move is
     // persisted at once, atomically.
@@ -380,6 +395,8 @@ int main(int argc, char **argv) {
         }
         const QString next = command == InstanceControl::Command::Next
             ? MiniPosition::next(stored.settings.miniPosition) : MiniPosition::previous(stored.settings.miniPosition);
+        // A dodge in progress is dropped; the glide to the new position starts where the window is.
+        miniDodger.cancel();
         miniGlider.glideTo(next);
         stored.settings.miniPosition = next;
         if (stored.canSave() && !SettingsFile::save(settingsPath, stored.settings))
@@ -435,7 +452,9 @@ int main(int argc, char **argv) {
         const QString scene = sceneHost.scene();
         const QUrl sceneUrl = sceneHost.url();
         const bool wallpaper = sceneHost.mode() == QStringLiteral("scene");
-        // A6: forget the old mini surface before anything below can destroy it.
+        // A6: forget the old mini surface before anything below can destroy it (and stop the
+        // hover dodge's cursor polling with it).
+        miniDodger.stop();
         miniGlider.detach();
         if (!policy.admits(generation)) return 0;
         attachment.reset();
@@ -494,6 +513,7 @@ int main(int argc, char **argv) {
                                [surface](unsigned anchors) {
                                    if (surface) surface->setAnchors(LayerShellQt::Window::Anchors::fromInt(int(anchors)));
                                }}, stored.settings.miniPosition);
+            miniDodger.start();
         }
         layer->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
         layer->setActivateOnShow(false);

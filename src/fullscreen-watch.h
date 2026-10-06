@@ -4,6 +4,7 @@
 #include <QLocalSocket>
 #include <QMargins>
 #include <QObject>
+#include <QPoint>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -32,6 +33,8 @@
 // instead of waiting for the next event, and a request's timeout only counts time the event loop
 // was actually running: the GUI loop stalls for seconds while QtWebEngine starts, which used to
 // fail the first query on every start and leave a fullscreen window present then unnoticed.
+// Hover dodge: the mini also asks for the cursor (j/cursorpos) on demand. That is the one polled
+// request, driven by the mini's own 100 ms timer (MiniDodger), never by the watch itself.
 namespace HyprlandIpc {
 // The Hyprland instance directories to try, best first. The one named by
 // $HYPRLAND_INSTANCE_SIGNATURE ($XDG_RUNTIME_DIR first, then /run/user/<uid>, so a host started
@@ -51,6 +54,11 @@ std::optional<bool> fullscreenCovers(const QByteArray &monitorsJson, const QByte
 bool triggersQuery(const QByteArray &eventName);
 // The subset after which the reserved zones may differ (bars, config, monitors): enough with coverage off.
 bool affectsReserved(const QByteArray &eventName);
+// The named monitor's origin (`x`, `y`) in Hyprland's global layout from `j/monitors` JSON;
+// nullopt when absent or malformed.
+std::optional<QPoint> monitorOrigin(const QByteArray &monitorsJson, const QString &monitor);
+// The cursor (`{"x":..,"y":..}`, global layout coordinates) from `j/cursorpos` JSON.
+std::optional<QPoint> cursorPosition(const QByteArray &cursorJson);
 }
 
 class FullscreenWatch final : public QObject {
@@ -74,6 +82,13 @@ public:
     // The output's last known reserved zones [left, top, right, bottom]; nullopt until the first
     // readable j/monitors answer. Kept across an outage (bars rarely change with a restart).
     std::optional<QMargins> reserved() const { return m_reserved; }
+    // The output's last known origin in Hyprland's layout, from the same j/monitors answers.
+    std::optional<QPoint> origin() const { return m_origin; }
+    // Hover dodge: one asynchronous j/cursorpos; `done` gets the cursor in output coordinates
+    // (layout position minus origin(); may lie off this output), or nullopt for an unreadable or
+    // timed-out answer or a dropped connection. Quiet: nothing is logged, nothing retried. False
+    // (and `done` is never called) when not connected or the origin is not known yet.
+    bool queryCursor(std::function<void(std::optional<QPoint>)> done);
     // Retry delays: the first one, doubled after each failed attempt up to `maxMs`.
     void setRetryDelays(int firstMs, int maxMs);
     // B12: a failed query is retried after `firstMs` (default 250), doubled after each failure up to
@@ -109,6 +124,7 @@ private:
     QString m_instance;
     QStringList m_candidates;
     std::optional<QMargins> m_reserved;
+    std::optional<QPoint> m_origin;
     int m_firstDelay = 1000, m_maxDelay = 30000, m_delay = 1000;
     int m_queryFirstDelay = 250, m_queryMaxDelay = 4000, m_queryDelay = 250;
     // Bumped on every disconnect: answers of an older connection are ignored.

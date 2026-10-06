@@ -60,7 +60,8 @@ std::optional<QMargins> parseHyprlandReserved(const QByteArray &json, const QStr
 }
 
 // Moves the mini's layer surface: instant on attach, a 220 ms glide through layer
-// margins on glideTo (CielWin GlideTo: a retarget starts from the frame last placed).
+// margins on glideTo (CielWin GlideTo: a retarget starts from the frame last placed) and
+// glideToRect (the hover dodge, which rests on the glide frame).
 // Anchor switches between the resting and glide frames send the margins first, which
 // the current anchors ignore, so no request ever moves the window by itself.
 class MiniGlider : public QObject {
@@ -77,8 +78,14 @@ public:
     // Forgets the surface (before it is destroyed); the target position is kept.
     void detach();
     bool attached() const { return bool(m_sink.setMargins); }
-    // False when no surface is attached. Without a usable size the move is instant.
+    // False when no surface is attached. Without a usable size the move is instant. From a dodged
+    // frame this glides back, even to the same position.
     bool glideTo(const QString &position);
+    // Hover dodge: glides to `frame` (usable-area coordinates) and rests there on the glide layer;
+    // the position stays as it is. False when no surface is attached or no usable size is known.
+    bool glideToRect(const QRect &frame);
+    // True while the window is, or glides to, a dodge frame instead of its position.
+    bool aside() const { return m_aside; }
     bool gliding() const { return m_gliding; }
     QString position() const { return m_position; }
     // One frame; driven by a ~60 Hz timer while gliding (public for tests).
@@ -86,13 +93,14 @@ public:
 
 private:
     using Layer = MiniPlacement::Layer;
+    void start(QSize usable, const QRect &to);
     void apply(const Layer &target);
     std::function<qint64()> m_clock;
     std::function<QSize()> m_usableSize;
     Sink m_sink;
     QString m_position = QStringLiteral("top-right");
     Layer m_applied;
-    bool m_gliding = false;
+    bool m_gliding = false, m_aside = false;
     QRect m_from, m_to, m_frame;
     qint64 m_start = 0;
     QTimer m_timer;
