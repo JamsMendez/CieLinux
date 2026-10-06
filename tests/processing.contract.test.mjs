@@ -173,7 +173,9 @@ test('HTML dependencies match the finite packaged browser manifest', () => {
     assert.doesNotMatch(css, /!important|https?:/);
     for (const name of ['main', 'render-loop']) assert.doesNotMatch(read(`processing/js/${name}.js`),
         /chrome\.webview|postMessage/i);
-    const hook = read('processing/js/see-through-hook.js');
+    // R1 (odd/tasks/alert-title-reach.md): the one additive block is the alert title reach limits.
+    const hook = read('processing/js/see-through-hook.js')
+        .replace(/^\/\/ Linux port begin \(R1\)[^\n]*\n[\s\S]*?^\/\/ Linux port end\.\n\n/gm, '');
     assert.equal(sha256(hook), 'ff0dc530ca117e5cda5849ebb2b0520b7517dd0385fcf27c7c2f30558037bd05', 'CielWin processing see-through hook, verbatim');
 });
 

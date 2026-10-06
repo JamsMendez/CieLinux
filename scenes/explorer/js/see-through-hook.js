@@ -13,6 +13,19 @@
 // the scene used this frame (renderFrame passes that same value through to renderAlertOverlay). The
 // shared overlay recolors this drawing to the alert's own color (blue failed / violet warning) and
 // clips it to the letters afterward, so this hook does not need to pick a color.
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. Alert title reach (shared/js/alert-overlay.js,
+// failureTitleLayout): the WARNING/FAILED letters cross the Greek ring and stop a small margin short of the
+// hieroglyph band (between the Greek and the constellation rings), using js/animate.js's ring center and
+// activeSceneBasis.
+function sceneAlertTitleLimits(sceneW, sceneH) {
+  var minD = Math.min(sceneW, sceneH);
+  var reach = HIEROGLYPH_BAND_OUTER_RADIUS_FRACTION * activeSceneBasis();
+  var cy = isMiniVariant ? sceneH / 2 : sceneH * CENTER_Y_FRACTION;
+  var margin = Math.max(3, minD * 0.012);
+  return { top: cy - reach - margin, bottom: cy + reach + margin };
+}
+// Linux port end.
+
 function sceneSeeThroughLayer(g, sceneW, sceneH, sceneTimeSeconds) {
   drawRisingSparks(g, sceneTimeSeconds);
 }
