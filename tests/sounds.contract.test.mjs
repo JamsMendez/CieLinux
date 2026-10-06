@@ -271,8 +271,8 @@ static int tray() {
     const QList<QAction *> root = tray.menu()->actions();
     QStringList layout;
     for (QAction *action : root) layout << (action->isSeparator() ? QString("---") : action->text());
-    // CielWin MenuOrder: Wallpaper mode, Scene, separator, sound group, separator, Exit.
-    CHECK(layout == QStringList({"Wallpaper mode", "Scene", "Frame rate", "---", QString::fromUtf8("Import failed sound…"),
+    // CielWin MenuOrder: Scene Mode, Scene, separator, sound group, separator, Exit.
+    CHECK(layout == QStringList({"Scene Mode", "Scene", "Frame rate", "---", QString::fromUtf8("Import failed sound…"),
         QString::fromUtf8("Import warning sound…"), "Remove failed sound", "Remove warning sound",
         "Alert sounds", "---", "Exit"}));
     QMenu *menu = tray.menu();

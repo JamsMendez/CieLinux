@@ -155,11 +155,11 @@ int main(int argc, char **argv) {
     int exits = 0;
     Tray tray(host, [&] { ++exits; });
 
-    // Root order (CielWin MenuOrder): Wallpaper mode submenu (B1), Scene submenu,
+    // Root order (CielWin MenuOrder): Scene Mode submenu (B1), Scene submenu,
     // separator, the A5 sound group (5 items, see sounds.contract.test.mjs), separator, Exit.
     const QList<QAction *> root = tray.menu()->actions();
     CHECK(root.size() == 11);
-    CHECK(root[0]->text() == "Wallpaper mode" && root[0]->menu() && root[0]->isEnabled() && root[0]->isVisible());
+    CHECK(root[0]->text() == "Scene Mode" && root[0]->menu() && root[0]->isEnabled() && root[0]->isVisible());
     CHECK(root[1]->text() == "Scene" && root[1]->menu());
     CHECK(root[2]->text() == "Frame rate" && root[2]->menu());
     CHECK(root[3]->isSeparator());
@@ -207,7 +207,7 @@ int main(int argc, char **argv) {
     host.setScene("explorer");
     CHECK(checkedLabels(scenes) == "Explorer");
 
-    // B1: Wallpaper mode submenu (CielWin TrayIconHost.ModeLabel, TrayMenuController.Modes
+    // B1: Scene Mode submenu (CielWin TrayIconHost.ModeLabel, TrayMenuController.Modes
     // order): exclusive checks re-read on open, every click through SceneHost::setMode.
     QStringList modeLabels;
     for (QAction *action : modes->actions()) {
@@ -215,34 +215,34 @@ int main(int argc, char **argv) {
         CHECK(action->actionGroup() && action->actionGroup()->isExclusive());
         modeLabels << action->text();
     }
-    CHECK(modeLabels == QStringList({"Scene wallpaper", "Mini window"}));
-    CHECK(checkedLabels(modes) == "Mini window");
+    CHECK(modeLabels == QStringList({"Scene Wallpaper", "Scene Mini"}));
+    CHECK(checkedLabels(modes) == "Scene Mini");
     const int beforeModes = switched.size();
-    sceneAction(modes, "Scene wallpaper")->trigger();
+    sceneAction(modes, "Scene Wallpaper")->trigger();
     CHECK(host.mode() == "scene" && host.scene() == "explorer");
     CHECK(switched.size() == beforeModes + 1 && switched.last() == "qrc:/explorer/index.html?fps=30");
-    CHECK(checkedLabels(modes) == "Scene wallpaper");
+    CHECK(checkedLabels(modes) == "Scene Wallpaper");
     // A scene switch keeps the mode (full-size page, no mini variant).
     sceneAction(scenes, "Idle")->trigger();
     CHECK(host.mode() == "scene" && switched.last() == "qrc:/idle/index.html?fps=30");
     // Re-selecting the current mode does not retarget.
-    sceneAction(modes, "Scene wallpaper")->trigger();
+    sceneAction(modes, "Scene Wallpaper")->trigger();
     CHECK(switched.size() == beforeModes + 2);
     // A refused mode switch leaves the current mode checked.
     allow = false;
-    sceneAction(modes, "Mini window")->trigger();
-    CHECK(host.mode() == "scene" && checkedLabels(modes) == "Scene wallpaper");
+    sceneAction(modes, "Scene Mini")->trigger();
+    CHECK(host.mode() == "scene" && checkedLabels(modes) == "Scene Wallpaper");
     allow = true;
     // Re-read when either menu opens.
-    sceneAction(modes, "Mini window")->setChecked(true);
+    sceneAction(modes, "Scene Mini")->setChecked(true);
     emit modes->aboutToShow();
-    CHECK(checkedLabels(modes) == "Scene wallpaper");
-    sceneAction(modes, "Mini window")->setChecked(true);
+    CHECK(checkedLabels(modes) == "Scene Wallpaper");
+    sceneAction(modes, "Scene Mini")->setChecked(true);
     emit tray.menu()->aboutToShow();
-    CHECK(checkedLabels(modes) == "Scene wallpaper");
+    CHECK(checkedLabels(modes) == "Scene Wallpaper");
     // Changed elsewhere: the checks follow SceneHost.
     CHECK(host.setMode("scene-mini"));
-    CHECK(checkedLabels(modes) == "Mini window" && checkedLabels(scenes) == "Idle");
+    CHECK(checkedLabels(modes) == "Scene Mini" && checkedLabels(scenes) == "Idle");
     CHECK(switched.last() == "qrc:/idle/index.html?variant=mini&fps=30");
 
     // Icon and tooltip; no tray host on offscreen -> not shown, logged once.
@@ -413,10 +413,10 @@ function assertMenuState(layout) {
     // Scene radio follows SceneHost (switched to Raphael while no host was around).
     assert.match(item(layout, 'Raphael'), /'toggle-state': <1>/, layout);
     assert.match(item(layout, 'Idle'), /'toggle-state': <0>/, layout);
-    // B1: Wallpaper mode radio follows SceneHost (the harness runs in the mini).
-    assert.match(item(layout, 'Mini window'), /'toggle-state': <1>/, layout);
-    assert.match(item(layout, 'Scene wallpaper'), /'toggle-state': <0>/, layout);
-    assert.doesNotMatch(item(layout, 'Scene wallpaper'), /'visible': <false>|'enabled': <false>/, layout);
+    // B1: Scene Mode radio follows SceneHost (the harness runs in the mini).
+    assert.match(item(layout, 'Scene Mini'), /'toggle-state': <1>/, layout);
+    assert.match(item(layout, 'Scene Wallpaper'), /'toggle-state': <0>/, layout);
+    assert.doesNotMatch(item(layout, 'Scene Wallpaper'), /'visible': <false>|'enabled': <false>/, layout);
     // Sound items: only the kind that has a sound shows its remove entry.
     assert.ok(item(layout, 'Remove failed sound'), layout);
     assert.doesNotMatch(item(layout, 'Remove failed sound'), /'visible': <false>/, layout);
