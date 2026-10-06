@@ -76,8 +76,10 @@ Without `--enable` nothing is started; run
 The unit runs `cielinux --resident`, is bound to `graphical-session.target` and is wanted
 by it, so an enabled unit starts with every graphical session. Your session must import
 `WAYLAND_DISPLAY` into the systemd user manager (uwsm and most Hyprland setups already
-do). The host recovers renderer crashes itself (3 per rolling hour); a non-zero exit is
-restarted after 5 s, at most 3 times a minute, and then left stopped.
+do). The host recovers renderer crashes itself (3 per rolling hour). Any exit is
+restarted, including the clean exit taken when the selected output disappears (monitor
+unplugged or powered off): first after 5 s, backing off up to every 5 min while the
+output is still missing. `systemctl --user stop cielinux` is never restarted.
 
 ### Uninstall
 
@@ -493,6 +495,15 @@ warning when Claude asks you something (optionally held until you answer) and a 
 alert when Bash fails. It reads the bearer token from the token file above. Its README
 covers how it works, install, configuration and uninstall.
 
+## pi integration
+
+[`integrations/pi/`](integrations/pi/README.md) holds the same `cielinux-scenes` behavior
+as a [pi](https://github.com/earendil-works/pi) coding-agent extension (for pi as launched
+by `gentle-shell`, or plain pi): scenes from the turn, tool calls and `subagent_run`
+subagents, a warning while a pi dialog waits for you (optionally held until it closes)
+and a failed alert when `bash` fails. Its README covers install, configuration and
+uninstall.
+
 ## Sounds
 
 No sound ships with CieLinux: each alert kind is silent until you import one from the
@@ -773,6 +784,7 @@ CieLinux/
 │   └── lumakey.frag              mini luminance key shader
 ├── systemd/cielinux.service.in   user unit template
 ├── integrations/claude-code/      cielinux-scenes Claude Code plugin (see its README)
+├── integrations/pi/               cielinux-scenes pi extension (see its README)
 └── tests/                        Node contract tests
 ```
 
