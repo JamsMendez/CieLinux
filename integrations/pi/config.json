@@ -1,0 +1,137 @@
+{
+  "enabled": true,
+  "server": {
+    "baseUrl": "http://127.0.0.1:43811",
+    "sceneRoute": "/v1/wallpaper/scene",
+    "alertsRoute": "/v1/alerts",
+    "token": "",
+    "tokenFile": "~/.local/state/cielinux/http.token"
+  },
+  "timing": {
+    "settleMs": 1500,
+    "minHoldMs": 4000,
+    "idleDelayMs": 8000
+  },
+  "scenes": {
+    "turn": {
+      "scene": "raphael",
+      "priority": 5
+    },
+    "idle": {
+      "scene": "idle"
+    },
+    "subagentTools": [
+      "subagent_run"
+    ],
+    "rules": [
+      {
+        "kind": "agent",
+        "match": [
+          "review-*",
+          "jd-judge-*",
+          "*-verify",
+          "*judge*",
+          "*planner*",
+          "sdd-propose",
+          "sdd-spec",
+          "sdd-design",
+          "sdd-tasks"
+        ],
+        "scene": "raphael",
+        "priority": 40
+      },
+      {
+        "kind": "agent",
+        "match": [
+          "jd-fix-agent",
+          "*-worker",
+          "*-fix*",
+          "*apply*",
+          "sdd-archive",
+          "sdd-init",
+          "sdd-onboard"
+        ],
+        "scene": "processing",
+        "priority": 30
+      },
+      {
+        "kind": "agent",
+        "match": [
+          "*-explore",
+          "*explorer*",
+          "sdd-explore",
+          "*research*"
+        ],
+        "scene": "explorer",
+        "priority": 20
+      },
+      {
+        "kind": "agent",
+        "match": "*",
+        "scene": "processing",
+        "priority": 25
+      },
+      {
+        "kind": "tool",
+        "match": [
+          "ask_user_*",
+          "*question*",
+          "todo",
+          "mem_*",
+          "*engram*",
+          "subagent_*",
+          "orchestrator_*"
+        ],
+        "scene": null,
+        "priority": 0
+      },
+      {
+        "kind": "tool",
+        "match": [
+          "bash",
+          "edit",
+          "write"
+        ],
+        "scene": "processing",
+        "priority": 30
+      },
+      {
+        "kind": "tool",
+        "match": [
+          "read",
+          "grep",
+          "find",
+          "ls",
+          "web_*",
+          "*search*",
+          "fetch_content",
+          "source_check",
+          "*codegraph*",
+          "*context7*"
+        ],
+        "scene": "explorer",
+        "priority": 20
+      }
+    ]
+  },
+  "alerts": {
+    "warning": {
+      "enabled": true,
+      "hold": false,
+      "duration": 5,
+      "cooldownMs": 10000,
+      "on": [
+        "*"
+      ]
+    },
+    "failed": {
+      "enabled": true,
+      "duration": 8,
+      "batchMs": 3000,
+      "tools": [
+        "bash"
+      ],
+      "ignoreInterrupted": true
+    }
+  }
+}
