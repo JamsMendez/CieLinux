@@ -37,7 +37,15 @@ be widened (letters size from the tile width).
   regexes would end at the inner end marker). Static cache key unchanged: limits are a pure function of W/H.
 - Tests: new tests/alert-title-reach.contract.test.mjs; alerts block count 12 -> 15; stripW4 also strips R1;
   processing hook hash strips R1. Full suite: 363 pass, 0 fail (earth/sparks perf tests flake under load only).
-- No commit (user preference).
+- Committed on user request as e19b3c8 (feat/alert-title-reach), merged --no-ff into local `integration`
+  with chore/output-loss-monitoring; both source branches deleted. RDD 4-lens review approved and
+  acknowledged (advisory: no reveal floor, hooks not executed in tests, processing constants duplicated).
+- Installed from `integration` (2026-10-06); cielinux + outputwatch services restarted and active.
+- Bug (user, raphael only): the see-through ring under the letters used glyphs.js stroke glyphs, smaller and
+  shaped differently from the real gold ring (outline-glyph sprites). Pre-existing, made visible by the deeper
+  reach. Fixed with an R1 block in raphael/js/see-through-hook.js that stamps sprites.outlineGlyphsGold with
+  drawOutlineGlyphRing geometry (fallback to strokes until baked) + test. Suite 364/0; reinstalled. RDD
+  1-lens review approved and acknowledged. Uncommitted on `integration`.
 
 ## Next step
-T4 mini width decision; install to try the wallpaper live.
+T4 mini width decision after the user tries the wallpaper live.

@@ -43,6 +43,36 @@ function sceneAlertTitleLimits(sceneW, sceneH) {
 }
 // Linux port end.
 
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. The see-through gold ring stamps the scene's own
+// outline-glyph sprites (sprites.outlineGlyphsGold, the ones drawGlyphRings stamps through drawOutlineGlyphRing
+// and the mini bake) instead of redrawing glyphs.js's stroke glyphs, which have other shapes and sizes, so the
+// letters show the ring exactly where it is drawn. The deeper title reach made the mismatch visible. Falls back
+// to the stroke ring below until the sprites are baked.
+var sceneSeeThroughLayerStrokes = sceneSeeThroughLayer;
+sceneSeeThroughLayer = function (g, sceneW, sceneH, progress) {
+  var spriteSet = sprites && sprites.outlineGlyphsGold;
+  if (!spriteSet || spriteSet.length < 1) return sceneSeeThroughLayerStrokes(g, sceneW, sceneH, progress);
+  var cx = sceneW * 0.505;
+  var cy = sceneH * 0.515;
+  var gold = goldGlyphRingDrawParams(progress);
+  var zoom = isMiniVariant ? MINI_SCENE_ZOOM : 1;
+  g.save();
+  g.translate(cx, cy);
+  g.scale(zoom, zoom);
+  g.translate(-cx, -cy);
+  for (var i = 0; i < spriteSet.length; i++) {
+    var angle = gold.rotation + (i / spriteSet.length) * TAU;
+    var sprite = spriteSet[i];
+    g.save();
+    g.translate(cx + Math.cos(angle) * gold.radius, cy + Math.sin(angle) * gold.radius);
+    g.rotate(glyphRingOrientationAngle(angle));
+    g.drawImage(sprite.canvas, -sprite.hw, -sprite.hh, sprite.hw * 2, sprite.hh * 2);
+    g.restore();
+  }
+  g.restore();
+};
+// Linux port end.
+
 function sceneSeeThroughLayer(g, sceneW, sceneH, progress) {
   var cx = sceneW * 0.505;
   var cy = sceneH * 0.515;

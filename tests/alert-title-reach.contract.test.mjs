@@ -88,3 +88,33 @@ test('R1 letter bands reach the limit but never cross the tile middle', () => {
     assert.equal(capped.top, frame.h * 0.5);
     assert.equal(capped.bottom, frame.h * 0.5);
 });
+
+// The raphael hook, run alone against stubs: it stamps the scene's own gold outline-glyph sprites, one per
+// ring slot, and falls back to the stroke ring until those sprites are baked.
+function raphaelHook(sprites) {
+    const calls = { images: [], strokes: 0 };
+    const g = {
+        save() {}, restore() {}, translate() {}, scale() {}, rotate() {},
+        drawImage(canvas, x, y, w, h) { calls.images.push({ canvas, x, y, w, h }); },
+    };
+    const sandbox = {
+        Math, TAU: Math.PI * 2, sprites, isMiniVariant: false, MINI_SCENE_ZOOM: 1.3507,
+        goldGlyphRingDrawParams: () => ({ radius: 100, rotation: 0, pool: [], count: 3, glyphSize: 4, lineWidth: 1 }),
+        glyphRingOrientationAngle: angle => angle - Math.PI / 2,
+        drawGlyphRing: () => { calls.strokes++; },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(read('raphael/js/see-through-hook.js'), sandbox);
+    sandbox.sceneSeeThroughLayer(g, 1920, 1080, 0.25);
+    return calls;
+}
+
+test('R1 raphael see-through stamps the gold ring sprites the scene draws', () => {
+    const set = [{ canvas: 'a', hw: 3, hh: 5 }, { canvas: 'b', hw: 4, hh: 6 }];
+    const stamped = raphaelHook({ outlineGlyphsGold: set });
+    assert.equal(stamped.strokes, 0);
+    assert.deepEqual(stamped.images.map(i => [i.canvas, i.x, i.y, i.w, i.h]), [['a', -3, -5, 6, 10], ['b', -4, -6, 8, 12]]);
+    const fallback = raphaelHook(null);
+    assert.equal(fallback.strokes, 1);
+    assert.equal(fallback.images.length, 0);
+});
