@@ -19,6 +19,7 @@ constexpr int approach = 24;  // px around the window that count as "near"
 constexpr int gap = 8;        // px between the dodged window and the zone it left
 constexpr int returnMs = 400; // the cursor stays away this long before the window returns
 constexpr int pollMs = 100;   // Hyprland cursor poll interval while in the mini
+constexpr int askLimitMs = 2000; // a cursor request still unanswered this long is given up on
 
 enum class Direction { Left, Right, Up, Down };
 QString name(Direction direction);
@@ -80,7 +81,8 @@ private:
     Trace m_trace;
     QTimer m_timer;
     // Bumped by stop() and cancel(): answers asked for before are ignored.
-    quint64 m_epoch = 0;
+    quint64 m_epoch = 0, m_ask = 0;
+    qint64 m_askedAt = 0;
     bool m_asking = false, m_dodged = false;
     QRect m_rect;
     // When the cursor was first seen away from both spots, -1 while it is near one.

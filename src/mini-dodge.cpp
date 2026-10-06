@@ -68,8 +68,10 @@ void MiniDodger::stop() {
 void MiniDodger::cancel() { reset(); }
 
 void MiniDodger::reset() {
+    // A request still out keeps m_asking: its answer is dropped by the epoch, and only then may the
+    // next poll ask again (one request at a time, across cancels and restarts).
     ++m_epoch;
-    m_asking = m_dodged = false;
+    m_dodged = false;
     m_awaySince = -1;
 }
 
@@ -78,15 +80,19 @@ void MiniDodger::poll() {
         stop();
         return;
     }
-    if (m_asking) return; // never two requests at once: this tick is skipped
+    // Never two requests at once: this tick is skipped, unless the request out is past askLimitMs.
+    const qint64 now = m_clock();
+    if (m_asking && now - m_askedAt < askLimitMs) return;
     m_asking = true;
-    const quint64 epoch = m_epoch;
-    const bool asked = m_query([this, epoch](std::optional<QPoint> cursor) {
-        if (epoch != m_epoch) return;
+    m_askedAt = now;
+    const quint64 epoch = m_epoch, ask = ++m_ask;
+    const bool asked = m_query([this, epoch, ask](std::optional<QPoint> cursor) {
+        if (ask != m_ask) return; // given up on: a newer request is out
         m_asking = false;
+        if (epoch != m_epoch) return;
         update(cursor);
     });
-    if (!asked && epoch == m_epoch) m_asking = false; // nobody to ask: no cursor, no dodge
+    if (!asked) m_asking = false; // nobody to ask: no cursor, no dodge
 }
 
 void MiniDodger::update(std::optional<QPoint> cursor) {

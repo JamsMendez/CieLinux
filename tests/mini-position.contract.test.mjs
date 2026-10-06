@@ -379,24 +379,54 @@ int main(int argc, char **argv) {
         CHECK(!d.dodged() && d.polling() && g.glideTo("bottom-right"));
         land();
         CHECK(wm.state == resting("bottom-right") && trace.isEmpty());
-        // stop() ends polling and drops an answer still due.
+        // A cancel while an answer is due drops that answer but still waits for it: no second request.
         d.poll();
         CHECK(asks == 4);
-        d.stop();
-        CHECK(!d.polling());
+        d.cancel();
+        d.poll();
+        CHECK(asks == 4);
         answer(QPoint(1870, 944));
         CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
+        d.poll();
+        CHECK(asks == 5);
+        answer(QPoint(800, 700));
+        // stop() ends polling and drops an answer still due; a restart waits for it too.
+        d.poll();
+        CHECK(asks == 6);
+        d.stop();
+        CHECK(!d.polling());
+        d.start();
+        d.poll();
+        CHECK(asks == 6);
+        answer(QPoint(1870, 944));
+        CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
+        // An answer that never comes cannot wedge the dodge: after askLimitMs the next poll asks again,
+        // and the lost answer, if it ever arrives, is dropped.
+        CHECK(MiniDodge::askLimitMs == 2000);
+        d.poll();
+        CHECK(asks == 7);
+        auto lost = std::move(pending);
+        t += 1999; d.poll();
+        CHECK(asks == 7);
+        t += 1; d.poll();
+        CHECK(asks == 8);
+        lost(QPoint(1870, 944));
+        CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
+        d.poll();
+        CHECK(asks == 8);
+        answer(QPoint(800, 700));
+        d.stop();
         // Out of the mini (or closing): the next poll stops polling, asking nothing.
         d.start();
         enabled = false;
         d.poll();
-        CHECK(!d.polling() && asks == 4);
+        CHECK(!d.polling() && asks == 8);
         // No surface (a rebuild): the same.
         enabled = true;
         d.start();
         g.detach();
         d.poll();
-        CHECK(!d.polling() && asks == 4);
+        CHECK(!d.polling() && asks == 8);
     }
     std::cout << "POSITION_OK";
     return 0;
