@@ -1,0 +1,13 @@
+{
+  "name": "cielinux-scenes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "pi extension: CieLinux wallpaper scenes and alerts from agent activity.",
+  "type": "module",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  }
+}
