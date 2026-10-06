@@ -873,14 +873,16 @@ const OVERLAY_REFERENCE_SHA256 = 'ca3ea282f62fcee9e009548ac0a9556bd018c8c2d99d7e
 const stripLinuxPort = text => text.replace(
     /(?:\n(?=\/\/ Linux port begin))?^[ \t]*\/\/ Linux port begin[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux port end\.\n/gm, '');
 
-test('overlay page: the CielWin overlay plus twelve additive Linux blocks (bridge, markers, keyed letters, W1 static layers, W4 bands)', async () => {
+test('overlay page: the CielWin overlay plus fifteen additive Linux blocks (bridge, markers, keyed letters, W1 static layers, W4 bands, R1 title reach)', async () => {
     const { createHash } = await import('node:crypto');
     const overlay = read('shared/js/alert-overlay.js');
     // W1 (odd/tasks/wallpaper-explorer-idle-cpu.md) adds three blocks: the static-layer cache, its use in
     // drawFailureOverlay and its release in renderAlertOverlay. W4 adds five: the band/module/backdrop helpers,
     // their use in drawFailureOverlay, drawTilePixelated and captureBackdropIfNeeded, and the module release.
-    assert.equal(overlay.match(/\/\/ Linux port begin/g).length, 12);
-    assert.equal(overlay.match(/\/\/ Linux port end\./g).length, 12);
+    // R1 (odd/tasks/alert-title-reach.md) adds three: the reach helpers, their use in drawFailureTitle and
+    // the W4 letter-band wrapper.
+    assert.equal(overlay.match(/\/\/ Linux port begin/g).length, 15);
+    assert.equal(overlay.match(/\/\/ Linux port end\./g).length, 15);
     assert.equal(createHash('sha256').update(stripLinuxPort(overlay)).digest('hex'), OVERLAY_REFERENCE_SHA256);
     // Exactly two markers leave the page, both from postToHost's own "ready"/"done".
     assert.deepEqual([...overlay.matchAll(/CIELINUX_ALERT_[A-Z_0-9]+/g)].map(m => m[0]), ['CIELINUX_ALERT_READY_V1', 'CIELINUX_ALERT_DONE_V1']);

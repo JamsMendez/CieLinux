@@ -27,6 +27,52 @@
 // alert's own color (blue failed / violet warning) via a 'source-in' composite and clips it to the
 // letters afterward, so this hook only needs to draw an opaque shape -- it fills with plain white,
 // same as processing's/explorer's own hooks already do.
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. Alert title reach (shared/js/alert-overlay.js,
+// failureTitleLayout): the WARNING/FAILED letters stop a small margin short of the gold glyph ring's outer
+// delimiter in mini (scaled by MINI_SCENE_ZOOM like the rest of the mini scene), and of the hexadecagon's
+// worst-case pulse extent in the wallpaper.
+function sceneAlertTitleLimits(sceneW, sceneH) {
+  var minD = Math.min(sceneW, sceneH);
+  var r = coreRadius(minD);
+  var reach = isMiniVariant
+    ? (r * GLYPH_RING_GOLD_OUTER_FACTOR + GLYPH_RING_DELIMITER_WIDTH / 2) * MINI_SCENE_ZOOM
+    : hexadecagonDrawnExtent(r, 1);
+  var cy = sceneH * 0.515;
+  var margin = Math.max(3, minD * 0.012);
+  return { top: cy - reach - margin, bottom: cy + reach + margin };
+}
+// Linux port end.
+
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. The see-through gold ring stamps the scene's own
+// outline-glyph sprites (sprites.outlineGlyphsGold, the ones drawGlyphRings stamps through drawOutlineGlyphRing
+// and the mini bake) instead of redrawing glyphs.js's stroke glyphs, which have other shapes and sizes, so the
+// letters show the ring exactly where it is drawn. The deeper title reach made the mismatch visible. Falls back
+// to the stroke ring below until the sprites are baked.
+var sceneSeeThroughLayerStrokes = sceneSeeThroughLayer;
+sceneSeeThroughLayer = function (g, sceneW, sceneH, progress) {
+  var spriteSet = sprites && sprites.outlineGlyphsGold;
+  if (!spriteSet || spriteSet.length < 1) return sceneSeeThroughLayerStrokes(g, sceneW, sceneH, progress);
+  var cx = sceneW * 0.505;
+  var cy = sceneH * 0.515;
+  var gold = goldGlyphRingDrawParams(progress);
+  var zoom = isMiniVariant ? MINI_SCENE_ZOOM : 1;
+  g.save();
+  g.translate(cx, cy);
+  g.scale(zoom, zoom);
+  g.translate(-cx, -cy);
+  for (var i = 0; i < spriteSet.length; i++) {
+    var angle = gold.rotation + (i / spriteSet.length) * TAU;
+    var sprite = spriteSet[i];
+    g.save();
+    g.translate(cx + Math.cos(angle) * gold.radius, cy + Math.sin(angle) * gold.radius);
+    g.rotate(glyphRingOrientationAngle(angle));
+    g.drawImage(sprite.canvas, -sprite.hw, -sprite.hh, sprite.hw * 2, sprite.hh * 2);
+    g.restore();
+  }
+  g.restore();
+};
+// Linux port end.
+
 function sceneSeeThroughLayer(g, sceneW, sceneH, progress) {
   var cx = sceneW * 0.505;
   var cy = sceneH * 0.515;

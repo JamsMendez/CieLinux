@@ -213,7 +213,7 @@ The socket is `$XDG_RUNTIME_DIR/cielinux/control.sock`:
 
 ## Wallpaper mode
 
-`wallpaper-mode = scene` (or `--mode scene`, or **Wallpaper mode ▸ Scene wallpaper** in
+`wallpaper-mode = scene` (or `--mode scene`, or **Scene Mode ▸ Scene Wallpaper** in
 the tray) shows the scene as the desktop wallpaper:
 
 - The full-size page (no mini variant) at the global frame-rate cap on the layer-shell **bottom**
@@ -297,7 +297,7 @@ your host's menu gesture) opens the menu:
 
 | Item | Action |
 | --- | --- |
-| **Wallpaper mode ▸** Scene wallpaper, Mini window | Switches the mode live (see [Live mode switch](#live-mode-switch)); the current one is checked. Saved to `wallpaper-mode` once the new page is ready. |
+| **Scene Mode ▸** Scene Wallpaper, Scene Mini | Switches the mode live (see [Live mode switch](#live-mode-switch)); the current one is checked. Saved to `wallpaper-mode` once the new page is ready. |
 | **Scene ▸** Processing, Explorer, Idle, Raphael | Switches the scene live; the current one is checked. Saved to `scene` once the new page is ready. |
 | **Frame rate ▸** 30 FPS, 60 FPS | One global cap for all scenes and modes (default 30); saved to `frame-rate` once the new page is ready. Rebuilds the page. |
 | **Import failed sound…** / **Import warning sound…** | Picks a sound file for that alert kind (see [Sounds](#sounds)). |
@@ -541,7 +541,7 @@ apps. It is created with commented defaults on first start.
 
 | Key | Values | Default | Changed by |
 | --- | --- | --- | --- |
-| `wallpaper-mode` | `scene-mini`, `scene` | `scene-mini` | tray **Wallpaper mode ▸** (live) |
+| `wallpaper-mode` | `scene-mini`, `scene` | `scene-mini` | tray **Scene Mode ▸** (live) |
 | `scene` | `processing`, `explorer`, `idle`, `raphael` | `processing` | tray **Scene ▸**, `POST /v1/wallpaper/scene` |
 | `frame-rate` | `30`, `60` (global FPS cap) | `30` | tray **Frame rate ▸** |
 | `mini-position` | `top-left`, `top-center`, `top-right`, `right-center`, `bottom-right`, `bottom-center`, `bottom-left`, `left-center` | `top-right` | `SUPER+Z` / `SUPER+SHIFT+Z` |

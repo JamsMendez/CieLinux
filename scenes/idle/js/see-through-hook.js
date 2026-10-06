@@ -34,6 +34,19 @@
 var constellationRingStamp = null;
 // Linux port end.
 
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. Alert title reach (shared/js/alert-overlay.js,
+// failureTitleLayout): the WARNING/FAILED letters cross the Greek ring and stop a small margin short of the
+// hieroglyph band (between the Greek and the constellation rings), using js/animate.js's ring center and
+// activeSceneBasis.
+function sceneAlertTitleLimits(sceneW, sceneH) {
+  var minD = Math.min(sceneW, sceneH);
+  var reach = HIEROGLYPH_BAND_OUTER_RADIUS_FRACTION * activeSceneBasis();
+  var cy = isMiniVariant ? sceneH / 2 : sceneH * CENTER_Y_FRACTION;
+  var margin = Math.max(3, minD * 0.012);
+  return { top: cy - reach - margin, bottom: cy + reach + margin };
+}
+// Linux port end.
+
 function sceneSeeThroughLayer(g, sceneW, sceneH, sceneTime) {
   // Guards the very first frame, if it happens to throw before the scene's own ring loop ever runs
   // (see js/animate.js's own remarks) -- nothing to stamp yet, so draw nothing rather than throw.
