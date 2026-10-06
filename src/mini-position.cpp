@@ -117,7 +117,7 @@ MiniGlider::MiniGlider(std::function<qint64()> clockMs, std::function<QSize()> u
 
 void MiniGlider::attach(Sink sink, const QString &position) {
     m_timer.stop();
-    m_gliding = false;
+    m_gliding = m_aside = false;
     m_sink = std::move(sink);
     m_position = MiniPosition::isValid(position) ? position : QStringLiteral("top-right");
     // A fresh surface: send the whole resting state.
@@ -128,15 +128,16 @@ void MiniGlider::attach(Sink sink, const QString &position) {
 
 void MiniGlider::detach() {
     m_timer.stop();
-    m_gliding = false;
+    m_gliding = m_aside = false;
     m_sink = {};
 }
 
 bool MiniGlider::glideTo(const QString &position) {
     if (!attached() || !MiniPosition::isValid(position)) return false;
-    if (!m_gliding && position == m_position) return true;
+    if (!m_gliding && !m_aside && position == m_position) return true;
     const QSize usable = m_usableSize();
     m_position = position;
+    m_aside = false;
     if (!usable.isValid() || usable.width() < side || usable.height() < side) {
         // No reliable frame to glide through: go straight to the resting place.
         m_timer.stop();
@@ -144,16 +145,30 @@ bool MiniGlider::glideTo(const QString &position) {
         apply(resting(position));
         return true;
     }
+    start(usable, rect(position, usable));
+    return true;
+}
+
+bool MiniGlider::glideToRect(const QRect &frame) {
+    if (!attached()) return false;
+    if (m_aside && !m_gliding && frame == m_to) return true;
+    const QSize usable = m_usableSize();
+    if (!usable.isValid() || usable.width() < side || usable.height() < side) return false;
+    m_aside = true;
+    start(usable, frame);
+    return true;
+}
+
+void MiniGlider::start(QSize usable, const QRect &to) {
     // A retarget starts from the frame last placed; otherwise from where the surface
-    // rests now (its resting layer resolved in this usable area).
+    // rests now (its resting or dodge layer resolved in this usable area).
     m_from = m_gliding ? m_frame : QRect(resolve(m_applied, usable, side), QSize(side, side));
-    m_to = rect(position, usable);
+    m_to = to;
     m_frame = m_from;
     m_start = m_clock();
     m_gliding = true;
     apply(MiniPlacement::gliding(m_frame));
     m_timer.start();
-    return true;
 }
 
 void MiniGlider::tick() {
@@ -167,7 +182,8 @@ void MiniGlider::tick() {
         m_timer.stop();
         m_gliding = false;
         m_frame = m_to;
-        apply(resting(m_position));
+        // A dodge rests on its glide frame; a position on its anchors.
+        apply(m_aside ? MiniPlacement::gliding(m_to) : resting(m_position));
         return;
     }
     m_frame = glideAt(m_from, m_to, elapsed, glideMs);

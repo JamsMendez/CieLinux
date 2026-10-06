@@ -24,7 +24,8 @@ output. Multi-monitor is out of scope.
 - A Wayland compositor with `zwlr_layer_shell_v1` (Hyprland, Sway and other
   wlroots compositors). X11 and GNOME are not supported.
 - Hyprland for the Hyprland-specific parts: fullscreen detection (wallpaper pause),
-  reserved-zone reads (mini glide, wallpaper alert layout) and the `SUPER+Z` binds.
+  reserved-zone reads (mini glide, wallpaper alert layout), the cursor position (mini
+  hover dodge) and the `SUPER+Z` binds.
   `install.sh` supports both the Lua config (Hyprland 0.56+, `hyprland.lua`) and the
   hyprlang config. On other compositors these parts degrade as described below.
 - Qt 6 with Core, Gui, Widgets, DBus, Network, Multimedia, Quick, Qml, WebEngineQuick and
@@ -170,6 +171,27 @@ The position is saved to `mini-position` in settings.conf on every move.
   is ignored and logged.
 - There is no tray item for positions (CielWin has none).
 
+### Hover dodge
+
+Clicks go through the mini, but it still hides what is under it. When the mouse cursor
+comes near (within 24 px of the window), the mini glides aside so you can see behind it,
+and glides back once the cursor has stayed away for 400 ms.
+
+- **Direction:** away from the cursor along the dominant axis: a cursor on the right
+  moves it left, above moves it down, below moves it up, on the left moves it right.
+  It moves far enough (one window plus the 24 px margin and an 8 px gap) to clear the
+  spot it left.
+- **Edges:** the dodged window must fit inside the usable area with the 16 px inset.
+  If the preferred side does not fit (`top-right` with the cursor on its left), it takes
+  a perpendicular side, the one farther from the cursor first. If none fits, it stays.
+- **Following it:** if the cursor reaches the dodged window, it takes another side;
+  lingering over the spot it left keeps it aside.
+- **Saved position:** a dodge never changes `mini-position`. `SUPER+Z` / `SUPER+SHIFT+Z`
+  cancel a dodge and glide to the new position from wherever the window is.
+- **Hyprland only:** the cursor comes from Hyprland's `j/cursorpos` (see
+  [Hyprland watch](#hyprland-watch)). On other compositors, or while Hyprland is
+  unreachable, there is no cursor and the mini does not dodge (and logs nothing about it).
+
 ### Hyprland binds
 
 `install.sh` appends the two binds to your Hyprland config in one marked block:
@@ -279,6 +301,13 @@ Coverage and reserved zones come from Hyprland's IPC, event driven (never polled
 
 The watch runs in both modes. In the mini, coverage is off: no `j/clients` queries, and
 only bar, config and monitor events refresh the reserved zones.
+
+One exception to "never polled", mini only: the [hover dodge](#hover-dodge) asks for the
+cursor (`j/cursorpos`) every 100 ms while the mini window is shown, one request at a
+time (a tick is skipped while an answer is still due), asynchronously, never logged. The
+answer is in Hyprland's global layout and is mapped onto the output with the monitor's
+`x`/`y` from the cached `j/monitors` answer. The polling stops with the mini (mode switch,
+rebuild, exit).
 
 | Situation | Behaviour |
 | --- | --- |
@@ -577,6 +606,8 @@ for example `HDMI-A-2`. This section lists every line CieLinux emits:
 | `CIELINUX_MINI position=<position>` | The mini moved; the new position is saved. |
 | `CIELINUX_MINI position ignored reason=not-mini-mode\|window-not-ready` | A move arrived outside the mini, or while its window is rebuilt. |
 | `CIELINUX_MINI settings save-failed` | The new position could not be saved. |
+| `CIELINUX_MINI dodge direction=<left\|right\|up\|down>` | The cursor came near the mini, which glides aside (the saved position is unchanged). |
+| `CIELINUX_MINI dodge return` | The cursor stayed away for 400 ms; the mini glides back to its position. |
 | `CIELINUX_IPC listening` | The control socket is up. |
 | `CIELINUX_IPC unavailable: <reason>` | No control socket and no single-instance guard (for example, no `XDG_RUNTIME_DIR`). |
 | `CIELINUX_IPC rejected peer-uid=<uid>\|busy\|extra-data\|unknown-command` | A control connection was refused. |
@@ -748,7 +779,7 @@ node --test tests/*.test.mjs                 # from CieLinux/
 node --test CieLinux/tests/*.test.mjs        # from the repository root
 ```
 
-36 contract test files, 350 tests. They read the sources and compile small native
+36 contract test files, 354 tests. They read the sources and compile small native
 harnesses against `src/` (they need the same Qt and CMake toolchain as the build).
 `tests/paths.mjs` maps file names to `src/` and `scenes/`.
 

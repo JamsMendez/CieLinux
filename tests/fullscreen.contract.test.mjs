@@ -30,12 +30,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Network)
 add_executable(fullscreen-contract harness.cpp "${SRC}/fullscreen-watch.cpp" "${SRC}/fullscreen-watch.h"
-    "${SRC}/mini-position.cpp" "${SRC}/mini-position.h")
+    "${SRC}/mini-position.cpp" "${SRC}/mini-position.h" "${SRC}/mini-dodge.cpp" "${SRC}/mini-dodge.h")
 target_include_directories(fullscreen-contract PRIVATE "${SRC}")
 target_link_libraries(fullscreen-contract PRIVATE Qt6::Core Qt6::Network)
 `;
     const harness = String.raw`
 #include "fullscreen-watch.h"
+#include "mini-dodge.h"
 #include "mini-position.h"
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -105,13 +106,30 @@ int main(int argc, char **argv) {
                           [&] { return output.shrunkBy(watch.reserved().value_or(QMargins())); });
         MiniPlacement::Layer state;
         QPoint lastGlideFrame;
+        // Every placement the compositor model saw since the last "path" command.
+        QStringList path;
         bool awaitingLanding = false;
         auto record = [&] {
-            if (state.anchors == (MiniPlacement::Top | MiniPlacement::Left))
-                lastGlideFrame = MiniPlacement::resolve(state, output.shrunkBy(truth), MiniPlacement::side);
+            const QPoint at = MiniPlacement::resolve(state, output.shrunkBy(truth), MiniPlacement::side);
+            path << QStringLiteral("%1,%2").arg(at.x()).arg(at.y());
+            if (state.anchors == (MiniPlacement::Top | MiniPlacement::Left)) lastGlideFrame = at;
         };
         if (mini) glider.attach({[&](const QMargins &m) { state.margins = m; record(); },
                                  [&](unsigned a) { state.anchors = a; record(); }}, QStringLiteral("top-right"));
+        // Hover dodge as main.cpp wires it: the cursor in output coordinates minus the reserved
+        // left/top is the usable-area cursor; "dodge on|off" stands for a mini attach / rebuild.
+        MiniDodger dodger(glider, [&] { return glideClock.elapsed(); },
+                          [&] { return output.shrunkBy(watch.reserved().value_or(QMargins())); },
+                          [&](MiniDodger::Answer done) {
+                              return watch.queryCursor([&watch, done](std::optional<QPoint> p) {
+                                  const QMargins r = watch.reserved().value_or(QMargins());
+                                  done(p ? std::optional<QPoint>(*p - QPoint(r.left(), r.top())) : std::nullopt);
+                              });
+                          },
+                          [&] { return mini; }, [&](const QString &line) {
+                              out("MINI " + line);
+                              awaitingLanding = true;
+                          });
         QTimer landing;
         QObject::connect(&landing, &QTimer::timeout, [&] {
             if (!awaitingLanding || glider.gliding()) return;
@@ -120,7 +138,8 @@ int main(int argc, char **argv) {
             out(QStringLiteral("LANDED %1,%2 REST %3,%4").arg(lastGlideFrame.x()).arg(lastGlideFrame.y()).arg(rest.x()).arg(rest.y()));
         });
         landing.start(5);
-        // Commands on stdin, one per line: start, reserved, gap, coverage on|off, glide <pos>.
+        // Commands on stdin, one per line: start, reserved, gap, coverage on|off, glide <pos>, cursor,
+        // dodge on|off, path.
         QSocketNotifier input(0, QSocketNotifier::Read);
         QByteArray pending;
         QObject::connect(&input, &QSocketNotifier::activated, [&] {
@@ -134,6 +153,22 @@ int main(int argc, char **argv) {
                 if (command == "start") watch.start();
                 else if (command == "coverage on") watch.setCoverage(true);
                 else if (command == "coverage off") watch.setCoverage(false);
+                else if (command == "dodge on") dodger.start();
+                else if (command == "dodge off") dodger.stop();
+                else if (command == "path") {
+                    out("PATH " + path.join(u' '));
+                    path.clear();
+                }
+                else if (command == "cursor") {
+                    // Hover dodge: one asynchronous j/cursorpos, in output coordinates.
+                    QElapsedTimer call;
+                    call.start();
+                    const bool asked = watch.queryCursor([](std::optional<QPoint> p) {
+                        out(p ? QStringLiteral("CURSOR %1,%2").arg(p->x()).arg(p->y()) : QStringLiteral("CURSOR none"));
+                    });
+                    out(QStringLiteral("CURSOR_US %1").arg(call.nsecsElapsed() / 1000));
+                    if (!asked) out("CURSOR unavailable");
+                }
                 else if (command.startsWith("glide ")) {
                     QElapsedTimer call;
                     call.start();
@@ -189,6 +224,8 @@ async function fakeHyprland(state, runtime = join(fixture, `run-${++counter}`)) 
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     // `waits`: per request connection, ms from accepting it to its first command byte (B13).
     const requests = [], times = [], events = [], waits = [];
+    // Cursor requests open right now, and the most ever open at once.
+    let cursorOpen = 0, cursorMaxOpen = 0;
     const request = createServer(socket => {
         let text = '';
         const accepted = Date.now();
@@ -205,6 +242,14 @@ async function fakeHyprland(state, runtime = join(fixture, `run-${++counter}`)) 
                 setTimeout(() => socket.end(JSON.stringify(state.monitors)), state.delayMonitors);
             else if (text === 'j/monitors') socket.end(JSON.stringify(state.monitors));
             else if (text === 'j/clients') socket.end(JSON.stringify(state.clients));
+            // `cursor`: the j/cursorpos answer (a string is sent as is), held back `delayCursor` ms.
+            else if (text === 'j/cursorpos' && state.cursor !== undefined) {
+                cursorMaxOpen = Math.max(cursorMaxOpen, ++cursorOpen);
+                socket.on('close', () => cursorOpen--);
+                const body = typeof state.cursor === 'string' ? state.cursor : JSON.stringify(state.cursor);
+                if (state.delayCursor) setTimeout(() => socket.end(body), state.delayCursor);
+                else socket.end(body);
+            }
             else socket.end('unknown request');
         });
         socket.on('error', () => {});
@@ -219,6 +264,7 @@ async function fakeHyprland(state, runtime = join(fixture, `run-${++counter}`)) 
         requests,
         times,
         waits,
+        cursorMaxOpen: () => cursorMaxOpen,
         emit: (...lines) => { for (const socket of events) socket.write(lines.map(l => l + '\n').join('')); },
         dropEvents: () => { for (const socket of events) socket.destroy(); },
         close: () => { request.close(); event.close(); for (const socket of events) socket.destroy(); },
@@ -815,6 +861,142 @@ test('mini glide: a slow j/monitors answer never blocks the glide; positions exa
             assert.equal(move.landed, `LANDED ${xy} REST ${xy}`, position);
         }
         assert.deepEqual(hypr.requests, ['j/monitors']);
+    } finally {
+        await watch.stop();
+        hypr.close();
+    }
+});
+
+// Hover dodge (mini): the cursor comes from an on-demand asynchronous j/cursorpos (global layout
+// coordinates) mapped onto the output with the monitor's x/y from the cached j/monitors answer.
+// One request per ask, never blocking, never polled by the watch itself, nothing logged.
+test('cursor query: j/cursorpos mapped onto the output, asynchronous and quiet', async () => {
+    const state = { monitors: [{ ...monitor('HDMI-A-1', 1), x: 0, y: 0 }, { ...monitor('DP-1', 2), x: 1920, y: 120 }],
+        clients: [], cursor: { x: 2000, y: 300 } };
+    const hypr = await fakeHyprland(state);
+    const watch = startWatch(hypr.env, 'DP-1', 20000, [40, 160], ['mini', 1920, 1080, 0, 0]);
+    const ask = async from => {
+        watch.send('cursor');
+        const call = await watch.waitFor('CURSOR_US', from, 2000, l => l.startsWith('CURSOR_US '));
+        const answer = await watch.waitFor('CURSOR', from, 3000, l => /^CURSOR (-?\d+,-?\d+|none|unavailable)$/.test(l));
+        return { us: Number(watch.lines[call].split(' ')[1]), answer: watch.lines[answer], at: Math.max(call, answer) + 1 };
+    };
+    try {
+        let at = await watch.waitFor('TRACE fullscreen-watch started monitor=DP-1');
+        await sleep(200); // the j/monitors answer (origin) is cached
+        let q = await ask(at);
+        assert.equal(q.answer, 'CURSOR 80,180');
+        assert.ok(q.us < 5000, `queryCursor returned in ${q.us} us`);
+        state.cursor = { x: 1900, y: 50 }; // on another output: still mapped, off this one
+        q = await ask(q.at);
+        assert.equal(q.answer, 'CURSOR -20,-70');
+        // An unreadable answer is no cursor, quietly (no query-failed line, no retry).
+        state.cursor = 'ok? not json';
+        q = await ask(q.at);
+        assert.equal(q.answer, 'CURSOR none');
+        await sleep(300);
+        assert.equal(hypr.requests.filter(r => r === 'j/cursorpos').length, 3, 'one request per ask, never on its own');
+        assert.deepEqual(watch.lines.filter(l => l.startsWith('TRACE')),
+            ['TRACE fullscreen-watch coverage off monitor=DP-1', 'TRACE fullscreen-watch started monitor=DP-1']);
+        assert.ok(!watch.lines.some(l => l.includes('failed')), JSON.stringify(watch.lines));
+    } finally {
+        await watch.stop();
+        hypr.close();
+    }
+});
+
+test('cursor query: unavailable before the monitor origin is known and without Hyprland', async () => {
+    const state = { monitors: [{ ...monitor('DP-1', 1), x: 0, y: 0 }], clients: [], cursor: { x: 5, y: 6 }, delayMonitors: 500 };
+    const hypr = await fakeHyprland(state);
+    const watch = startWatch(hypr.env, 'DP-1', 20000, [40, 160], ['mini', 1920, 1080, 0, 0]);
+    try {
+        const at = await watch.waitFor('TRACE fullscreen-watch started monitor=DP-1');
+        watch.send('cursor');
+        await watch.waitFor('CURSOR unavailable', at, 2000);
+        await sleep(700);
+        watch.send('cursor');
+        await watch.waitFor('CURSOR 5,6', at, 2000);
+    } finally {
+        await watch.stop();
+        hypr.close();
+    }
+    const none = startWatch({ XDG_RUNTIME_DIR: join(fixture, `empty-${++counter}`), HYPRLAND_INSTANCE_SIGNATURE: undefined },
+        'DP-1', 20000, [40, 160], ['mini', 1920, 1080, 0, 0]);
+    try {
+        await none.waitFor('TRACE fullscreen-watch unavailable reason=no-hyprland-socket');
+        none.send('cursor');
+        await none.waitFor('CURSOR unavailable', 0, 2000);
+        assert.equal(none.count('TRACE fullscreen-watch unavailable reason=no-hyprland-socket'), 1);
+    } finally {
+        await none.stop();
+    }
+});
+
+// Hover dodge end to end: a fake Hyprland cursor near the mini glides it aside along a straight,
+// jump-free path; lingering over its spot keeps it there; a far cursor brings it back after 400 ms.
+// One cursor request at a time even when Hyprland is slow, the loop stays live, and stopping the
+// dodge (a rebuild) ends the polling.
+test('mini dodge: a near cursor glides the mini aside, a far one brings it back', async () => {
+    const state = { monitors: [{ ...monitor('DP-1', 1, 0, [0, 0, 37, 0]), x: 1920, y: 0 }], clients: [],
+        cursor: { x: 1920 + 100, y: 900 } };
+    const hypr = await fakeHyprland(state);
+    const watch = startWatch(hypr.env, 'DP-1', 20000, [40, 160], ['mini', 1920, 1080, 37, 0]);
+    const asks = () => hypr.requests.filter(r => r === 'j/cursorpos').length;
+    const path = async from => {
+        watch.send('path');
+        const at = await watch.waitFor('PATH', from, 2000, l => l.startsWith('PATH'));
+        return { at: at + 1, points: watch.lines[at].split(' ').slice(1).map(p => p.split(',').map(Number)) };
+    };
+    try {
+        let at = await watch.waitFor('TRACE fullscreen-watch started monitor=DP-1');
+        await sleep(200);
+        watch.send('gap');
+        assert.equal(asks(), 0, 'the watch never polls the cursor by itself');
+        watch.send('dodge on');
+        await sleep(400);
+        assert.ok(asks() >= 2, `polled while in the mini: ${asks()}`);
+        assert.ok(!watch.lines.some(l => l.startsWith('MINI ')), 'a far cursor moves nothing');
+        at = (await path(at)).at;
+        // Near the top-right mini from the right: aside to the left.
+        state.cursor = { x: 1920 + 1870, y: 136 };
+        let line = await watch.waitFor('MINI dodge direction=left', at, 2000);
+        let landed = await watch.waitFor('LANDED', line, 2000, l => l.startsWith('LANDED '));
+        assert.equal(watch.lines[landed], 'LANDED 1355,16 REST 1355,16');
+        let p = await path(landed);
+        let x = 1627;
+        for (const [px, py] of p.points) { assert.ok(py === 16 && px <= x && px >= 1355, JSON.stringify(p.points)); x = px; }
+        // Lingering over its spot keeps it aside.
+        state.cursor = { x: 1920 + 1700, y: 136 };
+        await sleep(700);
+        assert.equal(watch.count('MINI dodge return'), 0);
+        state.cursor = { x: 1920 + 100, y: 900 };
+        const far = Date.now();
+        line = await watch.waitFor('MINI dodge return', p.at, 3000);
+        assert.ok(Date.now() - far >= 380, `returned ${Date.now() - far} ms after the cursor left`);
+        landed = await watch.waitFor('LANDED', line, 2000, l => l.startsWith('LANDED '));
+        assert.equal(watch.lines[landed], 'LANDED 1627,16 REST 1627,16');
+        p = await path(landed);
+        x = 1355;
+        for (const [px, py] of p.points) { assert.ok(py === 16 && px >= x && px <= 1627, JSON.stringify(p.points)); x = px; }
+        assert.equal(watch.count('MINI dodge direction=left'), 1, 'one line per move, never per poll');
+        // A slow Hyprland: the poll skips its ticks while a request is still due.
+        state.delayCursor = 300;
+        const before = asks();
+        await sleep(1000);
+        assert.ok(asks() - before <= 4, `${asks() - before} cursor requests in 1 s at 300 ms each`);
+        assert.equal(hypr.cursorMaxOpen(), 1, 'never two cursor requests at once');
+        state.delayCursor = 0;
+        watch.send('gap');
+        const gap = await watch.waitFor('GAP', 0, 2000, l => l.startsWith('GAP '));
+        const second = await watch.waitFor('GAP', gap + 1, 2000, l => l.startsWith('GAP '));
+        assert.ok(Number(watch.lines[second].split(' ')[1]) < 150, watch.lines[second]);
+        // Stopped (a rebuild or mode switch): no more cursor requests.
+        watch.send('dodge off');
+        await sleep(400);
+        const stopped = asks();
+        await sleep(400);
+        assert.equal(asks(), stopped);
+        assert.ok(!watch.lines.some(l => l.includes('failed') || l.includes('lost')), JSON.stringify(watch.lines));
     } finally {
         await watch.stop();
         hypr.close();

@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { SRC, source } from './paths.mjs';
+import { ROOT, SRC, source } from './paths.mjs';
 
 const read = name => readFileSync(source(name), 'utf8');
 let binary, fixture;
@@ -34,11 +34,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Network)
 add_executable(position-contract harness.cpp "${SRC}/mini-position.cpp" "${SRC}/mini-position.h"
-    "${SRC}/settings.cpp" "${SRC}/settings.h")
+    "${SRC}/mini-dodge.cpp" "${SRC}/mini-dodge.h" "${SRC}/settings.cpp" "${SRC}/settings.h")
 target_include_directories(position-contract PRIVATE "${SRC}")
 target_link_libraries(position-contract PRIVATE Qt6::Core Qt6::Network)
 `);
     writeFileSync(join(fixture, 'harness.cpp'), String.raw`
+#include "mini-dodge.h"
 #include "mini-position.h"
 #include "settings.h"
 #include <QCoreApplication>
@@ -204,6 +205,199 @@ int main(int argc, char **argv) {
     CHECK(!parseHyprlandReserved("not json", "DP-1"));
     CHECK(!parseHyprlandReserved(R"([{"name":"DP-1","reserved":[0,-3,0,0]}])", "DP-1"));
     CHECK(!parseHyprlandReserved(R"([{"name":"DP-1","reserved":[0,3]}])", "DP-1"));
+    // Hover dodge geometry (mini-dodge): away from the cursor along the dominant axis, fully inside
+    // the usable area (16 px inset), far enough to clear the approach zone; else a perpendicular
+    // side (the one farther from the cursor first); else nowhere.
+    {
+        using namespace MiniDodge;
+        CHECK(approach == 24 && gap == 8 && returnMs == 400 && pollMs == 100);
+        CHECK(zone(QRect(16, 16, 240, 240)) == QRect(-8, -8, 288, 288));
+        CHECK(name(Direction::Left) == "left" && name(Direction::Right) == "right"
+              && name(Direction::Up) == "up" && name(Direction::Down) == "down");
+        struct Case { const char *position; QPoint cursor; Direction direction; QRect rect; };
+        const Case cases[] = {
+            {"top-right", {1870, 136}, Direction::Left, {1355, 16, 240, 240}},   // cursor right: left
+            {"left-center", {2, 540}, Direction::Right, {288, 420, 240, 240}},   // cursor left: right
+            {"top-left", {136, 0}, Direction::Down, {16, 288, 240, 240}},        // cursor above: down
+            {"bottom-left", {136, 1075}, Direction::Up, {16, 552, 240, 240}},    // cursor below: up
+            {"top-right", {1610, 136}, Direction::Down, {1627, 288, 240, 240}},  // right does not fit
+            {"right-center", {1610, 560}, Direction::Up, {1627, 148, 240, 240}}, // cursor lower: up first
+            {"right-center", {1610, 520}, Direction::Down, {1627, 692, 240, 240}},
+        };
+        for (const Case &k : cases) {
+            const QRect home = rect(k.position, usable);
+            CHECK(zone(home).contains(k.cursor));
+            const std::optional<Choice> c = choose(home, k.cursor, usable);
+            CHECK(c && c->direction == k.direction && c->rect == k.rect);
+            CHECK(!c->rect.intersects(zone(home)) && !zone(c->rect).contains(k.cursor));
+            CHECK(QRect(16, 16, usable.width() - 32, usable.height() - 32).contains(c->rect));
+        }
+        // A vertical dodge that does not fit takes a side (a low usable area).
+        const QSize low(1883, 300);
+        const std::optional<Choice> side = choose(rect("top-center", low), QPoint(941, 0), low);
+        CHECK(side && side->direction == Direction::Left && side->rect == QRect(549, 16, 240, 240));
+        // No side fits: stays home.
+        CHECK(!choose(QRect(16, 16, 240, 240), QPoint(250, 136), QSize(300, 300)));
+        // A side whose rect would sit by the cursor is no dodge either.
+        CHECK(!choose(rect("top-right", usable), QPoint(1610, 270), usable));
+    }
+
+    // Rect glides (the dodge): the saved position stays, the frame rests on Top|Left margins, and
+    // the glide back to the position (or to a new one) starts where the window is: never a jump.
+    {
+        qint64 t = 50000;
+        Compositor wd{usable};
+        MiniGlider g([&] { return t; }, [&] { return usable; });
+        CHECK(!g.glideToRect(QRect(1355, 16, 240, 240)));
+        g.attach({[&](const QMargins &m) { wd.state.margins = m; wd.record(); },
+                  [&](unsigned anchors) { wd.state.anchors = anchors; wd.record(); }}, "top-right");
+        CHECK(!g.aside());
+        const QRect aside(1355, 16, 240, 240);
+        wd.seen.clear();
+        CHECK(g.glideToRect(aside) && g.gliding() && g.aside() && g.position() == "top-right");
+        for (int i = 0; i < 16; ++i) { t += 16; g.tick(); }
+        CHECK(!g.gliding() && g.aside() && g.position() == "top-right");
+        CHECK(wd.state == gliding(aside) && wd.seen.last() == aside.topLeft());
+        int x = 1627;
+        for (const QPoint &p : wd.seen) { CHECK(p.y() == 16 && p.x() <= x && p.x() >= 1355); x = p.x(); }
+        int sent = wd.seen.size();
+        CHECK(g.glideToRect(aside) && !g.gliding() && wd.seen.size() == sent);
+        // Back to the saved position: a glide too, resting on its anchors at the end.
+        wd.seen.clear();
+        CHECK(g.glideTo(g.position()) && g.gliding() && !g.aside());
+        for (int i = 0; i < 16; ++i) { t += 16; g.tick(); }
+        CHECK(!g.gliding() && wd.state == resting("top-right") && wd.seen.last() == QPoint(1627, 16));
+        x = 1355;
+        for (const QPoint &p : wd.seen) { CHECK(p.y() == 16 && p.x() >= x && p.x() <= 1627); x = p.x(); }
+        // Home and resting: nothing to do.
+        sent = wd.seen.size();
+        CHECK(g.glideTo("top-right") && wd.seen.size() == sent);
+        // A new position mid-dodge-glide starts from the frame last placed.
+        CHECK(g.glideToRect(aside));
+        t += 100; g.tick();
+        const QPoint mid = wd.seen.last();
+        CHECK(mid.x() < 1627 && mid.x() > 1355);
+        wd.seen.clear();
+        CHECK(g.glideTo("bottom-right") && !g.aside());
+        CHECK(wd.seen.isEmpty() || wd.seen.last() == mid);
+        for (int i = 0; i < 16; ++i) { t += 16; g.tick(); }
+        CHECK(wd.state == resting("bottom-right") && g.position() == "bottom-right");
+        for (const QPoint &p : wd.seen) CHECK(QRect(mid, QPoint(1627, 824)).contains(p));
+        // A rebuild forgets the dodge: the new surface rests at the position.
+        CHECK(g.glideToRect(QRect(1355, 824, 240, 240)));
+        g.detach();
+        CHECK(!g.aside() && !g.gliding());
+        Compositor again{usable};
+        g.attach({[&](const QMargins &m) { again.state.margins = m; },
+                  [&](unsigned anchors) { again.state.anchors = anchors; }}, g.position());
+        CHECK(!g.aside() && again.state == resting("bottom-right"));
+        // Without a usable size there is no frame to dodge to.
+        MiniGlider b([&] { return t; }, [] { return QSize(); });
+        b.attach({[](const QMargins &) {}, [](unsigned) {}}, "top-right");
+        CHECK(!b.glideToRect(aside) && !b.aside());
+    }
+    // The dodge driver (MiniDodger): one cursor request at a time, a dodge on approach, a return once
+    // the cursor stayed away 400 ms, one trace line per transition, the saved position untouched.
+    {
+        qint64 t = 90000;
+        Compositor wm{usable};
+        MiniGlider g([&] { return t; }, [&] { return usable; });
+        g.attach({[&](const QMargins &m) { wm.state.margins = m; wm.record(); },
+                  [&](unsigned anchors) { wm.state.anchors = anchors; wm.record(); }}, "top-right");
+        QStringList trace;
+        int asks = 0;
+        bool available = true, enabled = true;
+        std::function<void(std::optional<QPoint>)> pending;
+        MiniDodger d(g, [&] { return t; }, [&] { return usable; },
+                     [&](std::function<void(std::optional<QPoint>)> done) {
+                         if (!available) return false;
+                         ++asks;
+                         pending = std::move(done);
+                         return true;
+                     },
+                     [&] { return enabled; }, [&](const QString &line) { trace << line; });
+        const auto land = [&] { for (int i = 0; i < 16; ++i) { t += 16; g.tick(); } };
+        const auto answer = [&](std::optional<QPoint> p) { auto done = std::move(pending); pending = nullptr; done(p); };
+        CHECK(!d.polling() && MiniDodge::pollMs == 100);
+        d.start();
+        CHECK(d.polling());
+        // One request at a time: a poll while an answer is due asks nothing.
+        d.poll(); d.poll();
+        CHECK(asks == 1);
+        answer(QPoint(800, 700));
+        CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
+        // Approach from the right: glides left; the position (and so the setting) stays.
+        d.poll();
+        CHECK(asks == 2);
+        answer(QPoint(1870, 136));
+        CHECK(d.dodged() && g.aside() && g.position() == "top-right" && trace == QStringList{"dodge direction=left"});
+        land();
+        CHECK(wm.state == gliding(QRect(1355, 16, 240, 240)));
+        // Lingering over the home spot keeps it aside and logs nothing more.
+        d.update(QPoint(1700, 136)); t += 1000; d.update(QPoint(1700, 136));
+        CHECK(d.dodged() && trace.size() == 1);
+        // Away for 400 ms: back home.
+        d.update(QPoint(800, 700)); t += 399; d.update(QPoint(800, 700));
+        CHECK(d.dodged() && g.aside());
+        t += 1; d.update(QPoint(800, 700));
+        CHECK(!d.dodged() && !g.aside() && g.gliding() && trace == QStringList({"dodge direction=left", "dodge return"}));
+        land();
+        CHECK(wm.state == resting("top-right"));
+        // Coming near again before 400 ms restarts the wait.
+        d.update(QPoint(1870, 136)); land();
+        d.update(QPoint(800, 700)); t += 300; d.update(QPoint(1700, 100));
+        t += 300; d.update(QPoint(800, 700)); t += 300; d.update(QPoint(800, 700));
+        CHECK(d.dodged());
+        t += 100; d.update(QPoint(800, 700));
+        CHECK(!d.dodged());
+        land();
+        // Following the window to its new spot: it takes another side (down), one line per move.
+        d.update(QPoint(1870, 136)); land();
+        trace.clear();
+        d.update(QPoint(1400, 136));
+        CHECK(d.dodged() && trace == QStringList{"dodge direction=down"});
+        land();
+        CHECK(wm.state == gliding(QRect(1627, 288, 240, 240)));
+        // No cursor (Hyprland gone, an unreadable answer) reads as away: home after 400 ms.
+        trace.clear();
+        d.update(std::nullopt); t += 400; d.update(std::nullopt);
+        CHECK(!d.dodged() && trace == QStringList{"dodge return"});
+        land();
+        CHECK(wm.state == resting("top-right"));
+        // Nothing to ask (no Hyprland): nothing happens, the next poll asks again.
+        available = false;
+        d.poll();
+        CHECK(asks == 2 && d.polling() && !d.dodged());
+        available = true;
+        d.poll();
+        CHECK(asks == 3);
+        // A cycle-position move cancels the dodge and glides itself: no return line.
+        answer(QPoint(1870, 136));
+        CHECK(d.dodged());
+        trace.clear();
+        d.cancel();
+        CHECK(!d.dodged() && d.polling() && g.glideTo("bottom-right"));
+        land();
+        CHECK(wm.state == resting("bottom-right") && trace.isEmpty());
+        // stop() ends polling and drops an answer still due.
+        d.poll();
+        CHECK(asks == 4);
+        d.stop();
+        CHECK(!d.polling());
+        answer(QPoint(1870, 944));
+        CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
+        // Out of the mini (or closing): the next poll stops polling, asking nothing.
+        d.start();
+        enabled = false;
+        d.poll();
+        CHECK(!d.polling() && asks == 4);
+        // No surface (a rebuild): the same.
+        enabled = true;
+        d.start();
+        g.detach();
+        d.poll();
+        CHECK(!d.polling() && asks == 4);
+    }
     std::cout << "POSITION_OK";
     return 0;
 }
@@ -239,4 +433,34 @@ test('the mini attachment is placed and glided only through MiniGlider', () => {
     assert.doesNotMatch(read('mini-position.cpp'), /waitFor(Connected|ReadyRead|BytesWritten)/);
     const cmake = read('CMakeLists.txt');
     assert.match(cmake, /target_sources\(cielinux PRIVATE [^)]*src\/mini-position\.cpp/);
+});
+
+test('the hover dodge runs only in the mini, through MiniDodger and the watch cursor query', () => {
+    const main = read('main.cpp');
+    // Built after the glider; the cursor comes from the fullscreen watch's asynchronous query,
+    // moved into the usable area by the cached reserved left/top.
+    assert.ok(main.indexOf('MiniGlider miniGlider(') < main.indexOf('MiniDodger miniDodger('));
+    const dodger = main.slice(main.indexOf('MiniDodger miniDodger('), main.indexOf('instance.setHandler('));
+    assert.match(dodger, /fullscreenWatch\.queryCursor\(/);
+    assert.match(dodger, /fullscreenWatch\.reserved\(\)\.value_or\(QMargins\(\)\)/);
+    assert.match(dodger, /!policy\.closed\(\) && sceneHost\.mode\(\) == QStringLiteral\("scene-mini"\)/);
+    assert.match(dodger, /qInfo\("CIELINUX_MINI %s", qPrintable\(line\)\)/);
+    // SUPER+Z cancels a dodge before gliding to the new position (which is what gets saved).
+    const handler = main.slice(main.indexOf('instance.setHandler('), main.indexOf('instance.listen();'));
+    assert.ok(handler.indexOf('miniDodger.cancel()') >= 0);
+    assert.ok(handler.indexOf('miniDodger.cancel()') < handler.indexOf('miniGlider.glideTo(next)'));
+    // A rebuild (also every mode switch) stops it before the surface goes; a mini surface starts it.
+    const prepare = main.slice(main.indexOf('auto prepareAttachment'), main.indexOf('policy.bindReconstruction'));
+    assert.ok(prepare.indexOf('miniDodger.stop()') >= 0);
+    assert.ok(prepare.indexOf('miniDodger.stop()') < prepare.indexOf('miniGlider.detach()'));
+    const mini = prepare.slice(prepare.indexOf('} else {', prepare.indexOf('if (wallpaper) {')));
+    assert.ok(mini.indexOf('miniDodger.start()') > mini.indexOf('miniGlider.attach('));
+    // The mini still lets every click through.
+    assert.match(main, /Qt::WindowTransparentForInput/);
+    assert.doesNotMatch(read('mini-dodge.cpp') + read('mini-dodge.h'), /waitFor(Connected|ReadyRead|BytesWritten)|QSettings|miniPosition/);
+    assert.match(read('CMakeLists.txt'), /target_sources\(cielinux PRIVATE [^)]*src\/mini-dodge\.cpp/);
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+    assert.match(readme, /CIELINUX_MINI dodge direction=<left\\\|right\\\|up\\\|down>/);
+    assert.match(readme, /CIELINUX_MINI dodge return/);
+    assert.match(readme, /j\/cursorpos/);
 });

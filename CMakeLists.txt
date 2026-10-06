@@ -10,7 +10,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(Wayland REQUIRED IMPORTED_TARGET wayland-client)
 qt_add_executable(cielinux src/main.cpp src/settings.cpp src/scene-host.cpp src/tray.cpp src/http-server.cpp src/http-token.cpp src/alerts.cpp src/alert-sounds.cpp)
 # A6: mini positions + glide, and the per-user control socket / single-instance lock.
-target_sources(cielinux PRIVATE src/mini-position.cpp src/instance-control.cpp src/log-routing.h)
+target_sources(cielinux PRIVATE src/mini-position.cpp src/mini-dodge.cpp src/instance-control.cpp src/log-routing.h)
 # B2: wallpaper fullscreen coverage from Hyprland IPC (pause + held alerts).
 target_sources(cielinux PRIVATE src/fullscreen-watch.cpp)
 target_include_directories(cielinux PRIVATE src)
