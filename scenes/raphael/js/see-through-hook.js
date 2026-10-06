@@ -27,6 +27,22 @@
 // alert's own color (blue failed / violet warning) via a 'source-in' composite and clips it to the
 // letters afterward, so this hook only needs to draw an opaque shape -- it fills with plain white,
 // same as processing's/explorer's own hooks already do.
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. Alert title reach (shared/js/alert-overlay.js,
+// failureTitleLayout): the WARNING/FAILED letters stop a small margin short of the gold glyph ring's outer
+// delimiter in mini (scaled by MINI_SCENE_ZOOM like the rest of the mini scene), and of the hexadecagon's
+// worst-case pulse extent in the wallpaper.
+function sceneAlertTitleLimits(sceneW, sceneH) {
+  var minD = Math.min(sceneW, sceneH);
+  var r = coreRadius(minD);
+  var reach = isMiniVariant
+    ? (r * GLYPH_RING_GOLD_OUTER_FACTOR + GLYPH_RING_DELIMITER_WIDTH / 2) * MINI_SCENE_ZOOM
+    : hexadecagonDrawnExtent(r, 1);
+  var cy = sceneH * 0.515;
+  var margin = Math.max(3, minD * 0.012);
+  return { top: cy - reach - margin, bottom: cy + reach + margin };
+}
+// Linux port end.
+
 function sceneSeeThroughLayer(g, sceneW, sceneH, progress) {
   var cx = sceneW * 0.505;
   var cy = sceneH * 0.515;

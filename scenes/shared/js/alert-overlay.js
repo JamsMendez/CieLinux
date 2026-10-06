@@ -130,6 +130,13 @@ function failureLayer(slot, pixelWidth, pixelHeight, sceneTransform) {
 // the same technique alert-layer.js's renderTile already uses for its own mosaic.
 
 function drawFailureTitle(g, frame, title) {
+  // Linux port begin (R1): reach the scene's reference ring (see failureTitleLayout).
+  var titleLimits = failureTitleLimits();
+  if (titleLimits) {
+    drawFailureTitleReach(g, frame, title, failureTitleLayout(g, frame, title, titleLimits));
+    return;
+  }
+  // Linux port end.
   g.font = "400 100px " + FAILURE_TITLE_FONT;
   var fontSize = 100 * (frame.w * 0.97) / Math.max(1, g.measureText(title).width);
   var capHeight = fontSize * 0.72;
@@ -153,6 +160,58 @@ function drawFailureTitle(g, frame, title) {
   g.fillText(title, W * 0.5, frame.y + frame.h + capHeight * 0.42);
   g.restore();
 }
+
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. The title letters reach as far into the tile as
+// the scene allows: a scene may define sceneAlertTitleLimits(W, H) -> { top, bottom }, the scene y (CSS px)
+// the top and bottom letters must stop short of (its reference ring, margin included). The font size still
+// comes from the frame width, so glyphs are never stretched: only the reveal depth changes, clamped to the
+// glyph ascent (a glyph too short to reach shows whole). Single tile only; a mosaic keeps the reference reveal.
+function failureTitleLimits() {
+  return tiles.length === 1 && typeof sceneAlertTitleLimits === "function" ? sceneAlertTitleLimits(W, H) : null;
+}
+
+function failureTitleLayout(g, frame, title, limits) {
+  g.font = "400 100px " + FAILURE_TITLE_FONT;
+  var fontSize = 100 * (frame.w * 0.97) / Math.max(1, g.measureText(title).width);
+  g.font = "400 " + fontSize + "px " + FAILURE_TITLE_FONT;
+  var ascent = g.measureText(title).actualBoundingBoxAscent || fontSize * 0.72;
+  var top = Math.max(0, Math.min(ascent, limits.top - frame.y));
+  var bottom = Math.max(0, Math.min(ascent, frame.y + frame.h - limits.bottom));
+  return { fontSize: fontSize, topOffset: ascent - top, bottomOffset: ascent - bottom,
+    topBand: Math.max(H * 0.23, top), bottomBand: Math.max(H * 0.23, bottom) };
+}
+
+function drawFailureTitleReach(g, frame, title, layout) {
+  g.font = "400 " + layout.fontSize + "px " + FAILURE_TITLE_FONT;
+  g.textAlign = "center";
+  g.textBaseline = "alphabetic";
+
+  g.save();
+  g.beginPath();
+  g.rect(frame.x, frame.y, frame.w, layout.topBand);
+  g.clip();
+  g.translate(0, frame.y - layout.topOffset);
+  g.scale(1, -1);
+  g.fillText(title, W * 0.5, 0);
+  g.restore();
+
+  g.save();
+  g.beginPath();
+  g.rect(frame.x, frame.y + frame.h - layout.bottomBand, frame.w, layout.bottomBand);
+  g.clip();
+  g.fillText(title, W * 0.5, frame.y + frame.h + layout.bottomOffset);
+  g.restore();
+}
+
+// The letter bands (drawFailureOverlayBands) without the title: each reaches the limit, never past the
+// tile's middle; a band deeper than the letters only recolors pixels the letters clip away anyway. The
+// static-layer cache key needs no addition: the limits are a pure function of the tile size it already holds.
+function failureTitleReachBands(frame, limits) {
+  var most = frame.h * 0.5;
+  return { top: Math.min(most, Math.max(H * 0.23, limits.top - frame.y)),
+    bottom: Math.min(most, Math.max(H * 0.23, frame.y + frame.h - limits.bottom)) };
+}
+// Linux port end.
 
 function failureRails(frame) {
   var railH = Math.max(6, H * 0.012);
@@ -532,6 +591,32 @@ function prepareDirectBackdropPixels() {
   failureDirectBackdropPixels = prepared;
   return { canvas: canvas };
 }
+// Linux port end.
+
+// Linux port begin (R1): the W4 letter bands follow the title reach (failureTitleReachBands); a mosaic tile or
+// a scene without limits keeps W4's own bands.
+var failureLetterBandsW4 = failureLetterBands;
+failureLetterBands = function (frame, tileDeviceW, tileDeviceH) {
+  var limits = failureTitleLimits();
+  if (!limits) return failureLetterBandsW4(frame, tileDeviceW, tileDeviceH);
+  var heights = failureTitleReachBands(frame, limits);
+  var x0 = Math.max(0, Math.floor(frame.x * canvasScaleX) - 2);
+  var x1 = Math.min(tileDeviceW, Math.ceil((frame.x + frame.w) * canvasScaleX) + 2);
+  var spans = [[frame.y, frame.y + heights.top], [frame.y + frame.h - heights.bottom, frame.y + frame.h]];
+  var bands = [];
+  for (var i = 0; i < spans.length; i++) {
+    var y0 = Math.max(0, Math.floor(spans[i][0] * canvasScaleY) - 2);
+    var y1 = Math.min(tileDeviceH, Math.ceil(spans[i][1] * canvasScaleY) + 2);
+    if (x1 <= x0 || y1 <= y0) continue;
+    var last = bands[bands.length - 1];
+    if (last && y0 <= last.y + last.h) { // bands meeting mid-tile: never recolor/clip a pixel twice
+      last.h = Math.max(last.y + last.h, y1) - last.y;
+      continue;
+    }
+    bands.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+  }
+  return bands;
+};
 // Linux port end.
 
 function drawFailureOverlay(g, tileOffsetX, tileOffsetY, sceneW, sceneH, sceneTime, counter, theme, tileDeviceW, tileDeviceH) {

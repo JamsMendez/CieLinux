@@ -438,8 +438,9 @@ test('alert overlay: cached layers are released when the alert stops and rebuilt
 // module boxes/counters re-render only when the counter ticks, and a shown FAILED tile pixelates the
 // scene canvas directly instead of copying the whole canvas first. Mini keeps its op streams.
 
+// R1 (odd/tasks/alert-title-reach.md) came after W4, so its blocks go too.
 const stripW4 = text => text.replace(
-    /(?:\n(?=\/\/ Linux port begin \(W4\)))?^[ \t]*\/\/ Linux port begin \(W4\)[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux port end\.\n/gm, '');
+    /(?:\n(?=\/\/ Linux port begin \((?:W4|R1)\)))?^[ \t]*\/\/ Linux port begin \((?:W4|R1)\)[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux port end\.\n/gm, '');
 // alert-overlay.js and explorer/js/animate.js as installed with W1 (build 0bf0b4d0).
 const PRE_W4 = {
     'shared/js/alert-overlay.js': '5c6cd27e7ce5257fb0761e7389bced1233e6375195f3b2654886420d8e1ebfab',

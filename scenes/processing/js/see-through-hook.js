@@ -13,6 +13,20 @@
 // own color (blue failed / violet warning) and clips it to the letters afterward, so this hook only
 // needs to draw an opaque shape -- it fills with plain white, same as the shared overlay's own
 // 'source-in' recolor would replace anyway.
+// Linux port begin (R1): odd/tasks/alert-title-reach.md. Alert title reach (shared/js/alert-overlay.js,
+// failureTitleLayout): the WARNING/FAILED letters stop a small margin short of the central octagon's worst
+// case (corner up, full pulse wobble, widest chroma copy stroke), mirroring js/layers.js's
+// drawCentralOctagon.
+function sceneAlertTitleLimits(sceneW, sceneH) {
+  var minD = Math.min(sceneW, sceneH);
+  var miniK = isMiniVariant ? MINI_POLYGON_STROKE_PX / 5.1 : 1;
+  var reach = minD * 0.168 * 1.025 + 6.8 * miniK * 1.72 / 2;
+  var cy = sceneH * 0.515;
+  var margin = Math.max(3, minD * 0.012);
+  return { top: cy - reach - margin, bottom: cy + reach + margin };
+}
+// Linux port end.
+
 function sceneSeeThroughLayer(g, sceneW, sceneH, progress) {
   var cx = sceneW * 0.505;
   var cy = sceneH * 0.515;
