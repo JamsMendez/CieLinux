@@ -6,16 +6,20 @@ Description=CieLinux animated scene overlay
 PartOf=graphical-session.target
 After=graphical-session.target
 Requisite=graphical-session.target
-StartLimitIntervalSec=60
-StartLimitBurst=3
+# Restarts back off on their own (see RestartSteps), so no start limit is needed.
+StartLimitIntervalSec=0
 
 [Service]
 Type=exec
 ExecStart=@BINDIR@/cielinux --resident
-# The host recovers renderer crashes itself (3 per rolling hour); a non-zero exit
-# is a real failure, retried at most 3 times a minute and then left stopped.
-Restart=on-failure
+# The host recovers renderer crashes itself (3 per rolling hour). Any exit is
+# restarted, including the clean exit taken when the selected output is removed
+# (monitor unplugged or powered off); `systemctl --user stop` is never restarted.
+# Delays grow from 5 s to 5 min while the output stays unavailable.
+Restart=always
 RestartSec=5
+RestartSteps=6
+RestartMaxDelaySec=300
 KillMode=mixed
 # Stop gracefully before the compositor goes away on logout or shutdown.
 TimeoutStopSec=10
