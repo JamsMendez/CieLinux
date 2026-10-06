@@ -22,15 +22,15 @@ QString sceneLabel(const QString &scene) {
 // CielWin TrayMenuController.Modes (WallpaperMode declaration order) with
 // TrayIconHost.ModeLabel; the settings value (`wallpaper-mode`) each one selects.
 struct ModeEntry { const char *mode, *label; };
-constexpr ModeEntry modeEntries[] = {{"scene", "Scene wallpaper"}, {"scene-mini", "Mini window"}};
+constexpr ModeEntry modeEntries[] = {{"scene", "Scene Wallpaper"}, {"scene-mini", "Scene Mini"}};
 } // namespace
 
 Tray::Tray(SceneHost &host, std::function<void()> exit, TraySounds sounds, QObject *parent)
     : QObject(parent), host(host), exitHost(std::move(exit)), rootMenu(std::make_unique<QMenu>()),
       sounds(std::move(sounds)) {
-    // Wallpaper mode (B1): exactly one mode at a time; a click switches live through
+    // Scene Mode (B1): exactly one mode at a time; a click switches live through
     // SceneHost::setMode (the host rebuilds the surface without spending recovery).
-    QMenu *modeMenu = rootMenu->addMenu(QStringLiteral("Wallpaper mode"));
+    QMenu *modeMenu = rootMenu->addMenu(QStringLiteral("Scene Mode"));
     modeGroup = new QActionGroup(modeMenu);
     modeGroup->setExclusive(true);
     for (const ModeEntry &entry : modeEntries) {

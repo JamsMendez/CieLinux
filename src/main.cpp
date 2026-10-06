@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
                   << "       " << argv[0] << " --cycle-position next|prev\n"
                   << "Scene and mode default to settings.conf (scene, wallpaper-mode); flags win.\n"
                   << "Mode scene-mini (default) is the small overlay; scene is the full-screen animated wallpaper\n"
-                  << "on the bottom layer. The tray's Wallpaper mode menu switches between them live.\n"
+                  << "on the bottom layer. The tray's Scene Mode menu switches between them live.\n"
                   << "Duration defaults to 15 seconds; only 15 or 120 accepted.\n"
                   << "Resident omits the deadline; it cannot be paired with --duration.\n"
                   << "No Chromium or Qt override arguments accepted.\n"
@@ -228,7 +228,7 @@ int main(int argc, char **argv) {
             qWarning("CIELINUX_SOUND settings save-failed");
     }, SoundLibrary(AlertSoundLibrary::resolveDirectory()), &AlertSounds::pickWithDialog, createMediaOutput,
         [](const QString &line) { qInfo("CIELINUX_SOUND %s", qPrintable(line)); });
-    // Tray (A2, B1): Wallpaper mode ▸ calls sceneHost.setMode, Scene ▸ sceneHost.setScene; Exit
+    // Tray (A2, B1): Scene Mode ▸ calls sceneHost.setMode, Scene ▸ sceneHost.setScene; Exit
     // takes the normal close path.
     Tray tray(sceneHost, [&] {
         policy.noteCloseReason(Diagnostics::Reason::Normal);

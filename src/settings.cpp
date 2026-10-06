@@ -142,7 +142,7 @@ QString Settings::serialize() const {
         QStringLiteral("# CieLinux settings (same keys as CielWin). Edited by hand or by the app."),
         QStringLiteral("# wallpaper-mode: `scene-mini` (default) shows a small always-on-top scene window"),
         QStringLiteral("# (mini-position); `scene` shows the animated scene as the desktop wallpaper."),
-        QStringLiteral("# The tray's Wallpaper mode menu switches between them live."),
+        QStringLiteral("# The tray's Scene Mode menu switches between them live."),
         QStringLiteral("wallpaper-mode = ") + wallpaperMode,
         QString(),
         QStringLiteral("# http-server: on (default) runs the local HTTP server for scene switching and alerts;"),

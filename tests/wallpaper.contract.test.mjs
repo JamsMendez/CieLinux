@@ -173,7 +173,7 @@ test('help, settings comment and README describe the wallpaper mode (no "stage 2
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
     assert.doesNotMatch(readme, /stage 2 preview|Coming later in the same menu/);
     assert.match(readme, /## Wallpaper mode/);
-    assert.match(readme, /\*\*Wallpaper mode ▸\*\* Scene wallpaper, Mini window/);
+    assert.match(readme, /\*\*Scene Mode ▸\*\* Scene Wallpaper, Scene Mini/);
     // B2: fullscreen pause and alerts are documented, with their log lines.
     assert.doesNotMatch(readme, /Not yet in the wallpaper/);
     assert.match(readme, /CIELINUX_WALLPAPER paused reason=fullscreen/);
