@@ -12,10 +12,11 @@
 #include <optional>
 
 // Hover dodge: the mini takes no pointer input (Qt::WindowTransparentForInput), so it moves aside
-// when the cursor comes near and glides back once the cursor has gone. Geometry is in the usable
+// when the cursor enters the animation circle and glides back once the cursor has gone. Geometry is in the usable
 // area, as MiniPlacement's: the output minus other surfaces' exclusive zones, origin top-left.
 namespace MiniDodge {
-constexpr int approach = 24;  // px around the window that count as "near"
+constexpr double outerRadius = 0.48; // scenes' MINI_EDGE_FADE_OUTER, not the QML background disc
+constexpr int approach = 24;  // retained travel/clearance allowance, not a hover hit margin
 constexpr int gap = 8;        // px between the dodged window and the zone it left
 constexpr int returnMs = 400; // the cursor stays away this long before the window returns
 constexpr int pollMs = 100;   // Hyprland cursor poll interval while in the mini
@@ -24,7 +25,10 @@ constexpr int askLimitMs = 2000; // a cursor request still unanswered this long 
 enum class Direction { Left, Right, Up, Down };
 QString name(Direction direction);
 
-// The window's rect grown by the approach margin on every side.
+// Common animation support: centred circle, strict interior (the fade is zero at its edge).
+bool contains(const QRect &frame, QPointF cursor);
+
+// Destination clearance only: the window's rect grown by the travel allowance on every side.
 QRect zone(const QRect &rect, int margin = approach);
 
 struct Choice {
@@ -40,7 +44,7 @@ std::optional<Choice> choose(const QRect &home, QPoint cursor, QSize usable, int
 }
 
 // Drives the dodge in the mini: polls the cursor every pollMs (one request at a time), glides the
-// window aside through MiniGlider::glideToRect when the cursor enters its approach zone, and back
+// window aside through MiniGlider::glideToRect when the cursor enters its current-frame circle, and back
 // to its position once the cursor has stayed away from both spots for returnMs. Never writes the
 // position. Traces one line per move: `dodge direction=<left|right|up|down>`, `dodge return`.
 class MiniDodger : public QObject {
@@ -84,7 +88,6 @@ private:
     quint64 m_epoch = 0, m_ask = 0;
     qint64 m_askedAt = 0;
     bool m_asking = false, m_dodged = false;
-    QRect m_rect;
-    // When the cursor was first seen away from both spots, -1 while it is near one.
+    // When the cursor was first seen outside both current and home circles, -1 while inside one.
     qint64 m_awaySince = -1;
 };

@@ -174,18 +174,22 @@ The position is saved to `mini-position` in settings.conf on every move.
 ### Hover dodge
 
 Clicks go through the mini, but it still hides what is under it. When the mouse cursor
-comes near (within 24 px of the window), the mini glides aside so you can see behind it,
-and glides back once the cursor has stayed away for 400 ms.
+enters the visible animation circle, the mini glides aside so you can see behind it.
+The hit region is the centred circle of radius 48% of the canvas size, shared by all
+four scenes' outer fades—not the separate background disc or per-pixel alpha.
+Transparent corners, the exact outer edge, and padding outside the circle do not trigger.
+It glides back once the cursor has stayed outside both its current and home circles for 400 ms.
 
 - **Direction:** away from the cursor along the dominant axis: a cursor on the right
   moves it left, above moves it down, below moves it up, on the left moves it right.
-  It moves far enough (one window plus the 24 px margin and an 8 px gap) to clear the
+  It moves far enough (one window plus a 24 px travel allowance and an 8 px gap) to clear the
   spot it left.
 - **Edges:** the dodged window must fit inside the usable area with the 16 px inset.
   If the preferred side does not fit (`top-right` with the cursor on its left), it takes
   a perpendicular side, the one farther from the cursor first. If none fits, it stays.
-- **Following it:** if the cursor reaches the dodged window, it takes another side;
-  lingering over the spot it left keeps it aside.
+- **Following it:** if the cursor enters its animation circle, it takes another side;
+  triggers use the currently placed frame even during glides, not the destination.
+  Lingering inside the home circle keeps it aside.
 - **Saved position:** a dodge never changes `mini-position`. `SUPER+Z` / `SUPER+SHIFT+Z`
   cancel a dodge and glide to the new position from wherever the window is.
 - **Hyprland only:** the cursor comes from Hyprland's `j/cursorpos` (see

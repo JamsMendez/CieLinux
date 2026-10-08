@@ -958,7 +958,7 @@ test('mini dodge: a near cursor glides the mini aside, a far one brings it back'
         assert.ok(!watch.lines.some(l => l.startsWith('MINI ')), 'a far cursor moves nothing');
         at = (await path(at)).at;
         // Near the top-right mini from the right: aside to the left.
-        state.cursor = { x: 1920 + 1870, y: 136 };
+        state.cursor = { x: 1920 + 1840, y: 136 };
         let line = await watch.waitFor('MINI dodge direction=left', at, 2000);
         let landed = await watch.waitFor('LANDED', line, 2000, l => l.startsWith('LANDED '));
         assert.equal(watch.lines[landed], 'LANDED 1355,16 REST 1355,16');

@@ -88,6 +88,9 @@ public:
     bool aside() const { return m_aside; }
     bool gliding() const { return m_gliding; }
     QString position() const { return m_position; }
+    // Last applied glide frame, or the resting layer resolved in the current usable area.
+    // Does not advance animation; cursor answers must hit what is placed, not a future frame.
+    QRect frame() const;
     // One frame; driven by a ~60 Hz timer while gliding (public for tests).
     void tick();
 
