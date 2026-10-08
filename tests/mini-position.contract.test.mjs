@@ -226,7 +226,6 @@ int main(int argc, char **argv) {
         };
         for (const Case &k : cases) {
             const QRect home = rect(k.position, usable);
-            CHECK(zone(home).contains(k.cursor));
             const std::optional<Choice> c = choose(home, k.cursor, usable);
             CHECK(c && c->direction == k.direction && c->rect == k.rect);
             CHECK(!c->rect.intersects(zone(home)) && !zone(c->rect).contains(k.cursor));
@@ -296,6 +295,65 @@ int main(int argc, char **argv) {
         b.attach({[](const QMargins &) {}, [](unsigned) {}}, "top-right");
         CHECK(!b.glideToRect(aside) && !b.aside());
     }
+    // Trigger geometry is separate from destination choice: corners and former padding are clear.
+    {
+        // A 500 px fixture makes the 0.48 radius exactly 240: exclude the transparent edge.
+        const QRect circle(10, 20, 500, 500);
+        CHECK(MiniDodge::contains(circle, QPointF(260, 270)));
+        CHECK(MiniDodge::contains(circle, QPointF(499.5, 270)));
+        CHECK(!MiniDodge::contains(circle, QPointF(500, 270)));
+        CHECK(!MiniDodge::contains(circle, QPointF(500.5, 270)));
+        CHECK(!MiniDodge::contains(circle, QPointF(20, 270)));
+        CHECK(!MiniDodge::contains(circle, QPointF(260, 30)));
+        CHECK(!MiniDodge::contains(circle, QPointF(260, 510)));
+        CHECK(!MiniDodge::contains(QRect(), QPointF()));
+        qint64 t = 80000;
+        Compositor wm{usable};
+        MiniGlider g([&] { return t; }, [&] { return usable; });
+        g.attach({[&](const QMargins &m) { wm.state.margins = m; wm.record(); },
+                  [&](unsigned anchors) { wm.state.anchors = anchors; wm.record(); }}, "top-right");
+        QStringList trace;
+        MiniDodger d(g, [&] { return t; }, [&] { return usable; },
+                     [](MiniDodger::Answer) { return false; }, [] { return true; },
+                     [&](const QString &line) { trace << line; });
+        for (const QPoint p : {QPoint(1627, 16), QPoint(1866, 16), QPoint(1627, 255),
+                               QPoint(1866, 255), QPoint(1870, 136), QPoint(1610, 136),
+                               QPoint(1863, 136), QPoint(1631, 136)}) {
+            d.update(p);
+            CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
+        }
+        d.update(QPoint(1862, 136)); // just inside: 115 px from the true canvas centre
+        CHECK(d.dodged() && trace == QStringList{"dodge direction=left"});
+        // Mid-dodge, a destination-only hit must not retrigger; a visible-frame hit must.
+        t += 20; g.tick();
+        const QRect moving(wm.seen.last(), QSize(side, side));
+        d.update(QPoint(1400, 136)); // inside destination, outside current frame
+        CHECK(trace.size() == 1);
+        d.update(moving.topLeft() + QPoint(30, 120));
+        CHECK(trace.size() == 2 && trace.last() == "dodge direction=down");
+        t += 220; g.tick();
+        // A dodged corner is transparent too; no follow trigger.
+        d.update(wm.seen.last());
+        CHECK(trace.size() == 2);
+        // A transparent home corner no longer holds the window away.
+        d.update(QPoint(1627, 16)); t += 399; d.update(QPoint(1627, 16));
+        CHECK(d.dodged());
+        t += 1; d.update(QPoint(1627, 16));
+        CHECK(!d.dodged());
+        t += 220; g.tick();
+        // Position glide: neither source nor target is the currently visible frame.
+        CHECK(g.glideTo("bottom-left"));
+        t += 40; g.tick();
+        const QRect visible(wm.seen.last(), QSize(side, side));
+        d.update(QPoint(136, 944));
+        CHECK(!d.dodged());
+        d.update(QPoint(1747, 136));
+        CHECK(!d.dodged());
+        d.update(visible.topLeft() + QPoint(120, 120));
+        CHECK(d.dodged() && g.position() == "bottom-left");
+        d.stop();
+        g.detach();
+    }
     // The dodge driver (MiniDodger): one cursor request at a time, a dodge on approach, a return once
     // the cursor stayed away 400 ms, one trace line per transition, the saved position untouched.
     {
@@ -329,7 +387,7 @@ int main(int argc, char **argv) {
         // Approach from the right: glides left; the position (and so the setting) stays.
         d.poll();
         CHECK(asks == 2);
-        answer(QPoint(1870, 136));
+        answer(QPoint(1840, 136));
         CHECK(d.dodged() && g.aside() && g.position() == "top-right" && trace == QStringList{"dodge direction=left"});
         land();
         CHECK(wm.state == gliding(QRect(1355, 16, 240, 240)));
@@ -344,7 +402,7 @@ int main(int argc, char **argv) {
         land();
         CHECK(wm.state == resting("top-right"));
         // Coming near again before 400 ms restarts the wait.
-        d.update(QPoint(1870, 136)); land();
+        d.update(QPoint(1840, 136)); land();
         d.update(QPoint(800, 700)); t += 300; d.update(QPoint(1700, 100));
         t += 300; d.update(QPoint(800, 700)); t += 300; d.update(QPoint(800, 700));
         CHECK(d.dodged());
@@ -352,7 +410,7 @@ int main(int argc, char **argv) {
         CHECK(!d.dodged());
         land();
         // Following the window to its new spot: it takes another side (down), one line per move.
-        d.update(QPoint(1870, 136)); land();
+        d.update(QPoint(1840, 136)); land();
         trace.clear();
         d.update(QPoint(1400, 136));
         CHECK(d.dodged() && trace == QStringList{"dodge direction=down"});
@@ -372,7 +430,7 @@ int main(int argc, char **argv) {
         d.poll();
         CHECK(asks == 3);
         // A cycle-position move cancels the dodge and glides itself: no return line.
-        answer(QPoint(1870, 136));
+        answer(QPoint(1840, 136));
         CHECK(d.dodged());
         trace.clear();
         d.cancel();
@@ -442,6 +500,16 @@ test('eight CielWin positions, cycle, settings and a jump-free 220 ms margin gli
     const result = run(binary, [], { ...process.env, QT_QPA_PLATFORM: 'offscreen' });
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /POSITION_OK/);
+});
+
+test('mini hover circle matches all four scenes outer animation fades, not the background disc', () => {
+    const header = read('mini-dodge.h');
+    const radius = Number(header.match(/outerRadius\s*=\s*([\d.]+)/)[1]);
+    assert.equal(radius, 0.48);
+    for (const scene of ['idle', 'raphael', 'explorer', 'processing']) {
+        const renderer = readFileSync(join(ROOT, 'scenes', scene, 'js', 'render-loop.js'), 'utf8');
+        assert.equal(Number(renderer.match(/MINI_EDGE_FADE_OUTER\s*=\s*([\d.]+)/)[1]), radius, scene);
+    }
 });
 
 test('the mini attachment is placed and glided only through MiniGlider', () => {

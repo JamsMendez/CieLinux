@@ -159,6 +159,14 @@ bool MiniGlider::glideToRect(const QRect &frame) {
     return true;
 }
 
+QRect MiniGlider::frame() const {
+    if (!attached()) return {};
+    if (m_gliding) return m_frame;
+    const QSize usable = m_usableSize();
+    if (!usable.isValid() || usable.width() < side || usable.height() < side) return {};
+    return QRect(resolve(m_applied, usable, side), QSize(side, side));
+}
+
 void MiniGlider::start(QSize usable, const QRect &to) {
     // A retarget starts from the frame last placed; otherwise from where the surface
     // rests now (its resting or dodge layer resolved in this usable area).

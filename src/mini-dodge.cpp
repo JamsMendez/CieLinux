@@ -14,6 +14,15 @@ QString name(Direction direction) {
     return QString();
 }
 
+bool contains(const QRect &frame, QPointF cursor) {
+    if (!frame.isValid()) return false;
+    // QRect::center() rounds down; canvas coordinates instead centre at half the size.
+    const double dx = cursor.x() - (frame.x() + frame.width() / 2.0);
+    const double dy = cursor.y() - (frame.y() + frame.height() / 2.0);
+    const double radius = outerRadius * qMin(frame.width(), frame.height());
+    return dx * dx + dy * dy < radius * radius;
+}
+
 QRect zone(const QRect &rect, int margin) { return rect.adjusted(-margin, -margin, margin, margin); }
 
 std::optional<Choice> choose(const QRect &home, QPoint cursor, QSize usable, int inset) {
@@ -100,13 +109,14 @@ void MiniDodger::update(std::optional<QPoint> cursor) {
     const QSize usable = m_usableSize();
     if (!usable.isValid() || usable.width() < MiniPlacement::side || usable.height() < MiniPlacement::side) return;
     const QRect home = MiniPlacement::rect(m_glider.position(), usable);
-    const bool nearHome = cursor && zone(home).contains(*cursor);
+    const bool nearHome = cursor && contains(home, *cursor);
+    const bool overFrame = cursor && contains(m_glider.frame(), *cursor);
     if (!m_dodged) {
-        if (!nearHome) return;
+        if (!overFrame) return;
         if (const auto choice = choose(home, *cursor, usable)) dodge(*choice);
         return;
     }
-    if (cursor && zone(m_rect).contains(*cursor)) {
+    if (overFrame) {
         // Followed to the new spot: another side, chosen from home again; with none left and
         // home clear of the cursor, home.
         m_awaySince = -1;
@@ -133,7 +143,6 @@ void MiniDodger::returnHome() {
 void MiniDodger::dodge(const Choice &choice) {
     if (!m_glider.glideToRect(choice.rect)) return;
     m_dodged = true;
-    m_rect = choice.rect;
     m_awaySince = -1;
     m_trace(QStringLiteral("dodge direction=%1").arg(name(choice.direction)));
 }
