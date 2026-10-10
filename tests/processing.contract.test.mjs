@@ -134,7 +134,9 @@ const referenceSha256 = {
     // Linux mini optimization (O2, O2b; B5 wallpaper exact-stream layers); was 6fc77931949e0dfceadbbecd96f11370b2c2bb8816fb58fa7f769af315f428b0;
     // CielWin reference: 84cce57bef22a17d9a41f4f9b91cd7c7bfeaa0f485ed082a76643aa7f0c3a405
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 4af337720deb49ec9664ed42721326d8896b39baeb65e02189d27da51888cf35
-    layers: '8a426f212cd6c6326be3befe2a61d1e1b1413af5e8114e04b5c5225ee97ca6d4',
+    // Re-pinned for invariant star/streak directions (odd/tasks/processing-invariant-trig.md).
+    // Re-pinned after exact arithmetic-reuse contracts (odd/tasks/processing-arithmetic-reuse.md).
+    layers: '580e69b2847adafd589987451c28755e44810d8069de12194e978698ba3c38ca',
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162
     nebula: 'eac31e99953bd84950cee77603243e6ed2dccea0598f1e68cb3ad59d57f42d25',
 };

@@ -237,14 +237,16 @@ function miniFoldingBandGeometry(rx, ry, width, foldPhase) {
     const nx = -ty / tangentLength;
     const ny = tx / tangentLength;
     const fold = a * 2 + foldPhase;
-    const compression = foldingBandCompression(fold);
+    // C1: compression and front share this dynamic cosine; keep both expressions ordered.
+    const cosFold = Math.cos(fold);
+    const compression = 0.10 + 0.90 * cosFold ** 2;
     const bandWidth = width * compression;
     const skew = Math.sin(fold) * width * 0.22;
     p.leftX[i] = x + nx * bandWidth + (tx / tangentLength) * skew;
     p.leftY[i] = y + ny * bandWidth + (ty / tangentLength) * skew;
     p.rightX[i] = x - nx * bandWidth - (tx / tangentLength) * skew;
     p.rightY[i] = y - ny * bandWidth - (ty / tangentLength) * skew;
-    p.front[i] = 0.5 + 0.5 * Math.cos(fold);
+    p.front[i] = 0.5 + 0.5 * cosFold;
   }
   return segmentCount + 1;
 }
@@ -462,7 +464,54 @@ function fillCircle(x, y, radius) {
   ctx.fill();
 }
 
+// Linux mini optimization begin (T1): completed seeded descriptors are operationally immutable (not
+// frozen). Cache full-precision directions after scene-data's RNG stream is complete. C1 adds only
+// the ordered CSS-size prefixes to existing star records; streak directions remain size-independent.
+const starDirections = stars.map(s => ({ cos: Math.cos(s.a), sin: Math.sin(s.a), xPrefix: 0, yPrefix: 0 }));
+const radialStreakDirections = radialStreaks.map(s => ({ cos: Math.cos(s.a), sin: Math.sin(s.a) }));
+let starPrefixWidth, starPrefixHeight;
+
+function drawCachedStars(cx, cy, p, phase) {
+  // Refresh lazily in place for the current CSS dimensions, never DPR or a history of sizes.
+  if (!Object.is(starPrefixWidth, W) || !Object.is(starPrefixHeight, H)) {
+    for (const direction of starDirections) {
+      direction.xPrefix = direction.cos * W * 0.77;
+      direction.yPrefix = direction.sin * H * 0.91;
+    }
+    starPrefixWidth = W;
+    starPrefixHeight = H;
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    const direction = starDirections[i];
+    const z = fract(s.z + p * s.speed * 0.24 * BACKGROUND_PARTICLE_SPEED_MULTIPLIER);
+    const d = 0.018 + Math.pow(z, 1.82) * 1.18;
+    const x = cx + direction.xPrefix * d * s.lane;
+    const y = cy + direction.yPrefix * d;
+    const tw = 0.32 + 0.68 * Math.sin(phase * 1.5 + s.twinkle) ** 2;
+    const alpha = (0.08 + z * 0.78) * tw;
+    const r = s.r * (0.42 + z * 1.38) * BACKGROUND_PARTICLE_SIZE_MULTIPLIER;
+    const color = s.warm ? '255,246,192' : '238,250,255';
+    ctx.fillStyle = `rgba(${color},${alpha})`;
+    fillCircle(x, y, r);
+    if (s.glint && z > 0.52) {
+      const offset = (0.8 + z * 1.5) * BACKGROUND_PARTICLE_SIZE_MULTIPLIER;
+      ctx.fillStyle = `rgba(58,220,255,${alpha * 0.48})`;
+      fillCircle(x - offset, y, r);
+      ctx.fillStyle = `rgba(255,86,158,${alpha * 0.42})`;
+      fillCircle(x + offset, y, r);
+    }
+  }
+  ctx.restore();
+}
+// Linux mini optimization end.
 function drawStars(cx, cy, p, phase) {
+  // Linux mini optimization begin (T1): retain the unmodified CielWin body for reference stripping.
+  drawCachedStars(cx, cy, p, phase);
+  return;
+  // Linux mini optimization end.
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
   for (const s of stars) {
@@ -602,7 +651,49 @@ function drawPerspectiveRays(cx, cy, phase) {
   ctx.restore();
 }
 
+// Linux mini optimization begin (T1): same drawing stream, using only cached angle operands.
+function drawCachedRadialStreaks(cx, cy, p) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < radialStreaks.length; i++) {
+    const s = radialStreaks[i];
+    const z = fract(s.z + p * s.speed * 0.64);
+    if (z < 0.72) continue;
+    const direction = radialStreakDirections[i];
+    const z0 = Math.max(0, z - 0.022 - s.speed * 0.014);
+    const d1 = Math.pow(z, 2.18) * s.lane;
+    const d0 = Math.pow(z0, 2.18) * s.lane;
+    const x1 = cx + direction.cos * W * 0.80 * d0;
+    const y1 = cy + direction.sin * H * 0.94 * d0;
+    const x2 = cx + direction.cos * W * 0.80 * d1;
+    const y2 = cy + direction.sin * H * 0.94 * d1;
+    const width = s.width * RADIAL_STREAK_WIDTH_MULTIPLIER;
+    const strokeAlpha = s.alpha * (z - 0.62) * 1.9;
+    // Symmetric gradient: red tips, then yellow, green and blue at the stroke's centre.
+    const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+    for (const [stop, rgb] of RADIAL_STREAK_GRADIENT) {
+      gradient.addColorStop(stop, `rgb(${rgb})`);
+      gradient.addColorStop(1 - stop, `rgb(${rgb})`);
+    }
+    ctx.strokeStyle = gradient;
+    for (const [widthScale, layerAlpha] of RADIAL_STREAK_SOFT_LAYERS) {
+      ctx.globalAlpha = strokeAlpha * layerAlpha;
+      ctx.lineWidth = width * widthScale;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+// Linux mini optimization end.
 function drawRadialStreaks(cx, cy, p) {
+  // Linux mini optimization begin (T1): retain the unmodified CielWin body for reference stripping.
+  drawCachedRadialStreaks(cx, cy, p);
+  return;
+  // Linux mini optimization end.
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
   ctx.lineCap = 'round';

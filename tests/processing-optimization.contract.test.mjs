@@ -422,8 +422,54 @@ return { drawAtomicOrbits, drawSegmentedSphere, segmentedSpherePieceState, segme
 }
 `;
 
+// C1 baseline: verbatim current drawCachedStars, renamed only. Unlike REFERENCE above, this
+// preserves the installed direction cache and the current renderer, not pre-PERF-5 painting.
+const ARITHMETIC_REFERENCE = String.raw`
+function referenceCachedStars(cx, cy, p, phase) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    const direction = starDirections[i];
+    const z = fract(s.z + p * s.speed * 0.24 * BACKGROUND_PARTICLE_SPEED_MULTIPLIER);
+    const d = 0.018 + Math.pow(z, 1.82) * 1.18;
+    const x = cx + direction.cos * W * 0.77 * d * s.lane;
+    const y = cy + direction.sin * H * 0.91 * d;
+    const tw = 0.32 + 0.68 * Math.sin(phase * 1.5 + s.twinkle) ** 2;
+    const alpha = (0.08 + z * 0.78) * tw;
+    const r = s.r * (0.42 + z * 1.38) * BACKGROUND_PARTICLE_SIZE_MULTIPLIER;
+    const color = s.warm ? '255,246,192' : '238,250,255';
+    ctx.fillStyle = ` + '`rgba(${color},${alpha})`' + String.raw`;
+    fillCircle(x, y, r);
+    if (s.glint && z > 0.52) {
+      const offset = (0.8 + z * 1.5) * BACKGROUND_PARTICLE_SIZE_MULTIPLIER;
+      ctx.fillStyle = ` + '`rgba(58,220,255,${alpha * 0.48})`' + String.raw`;
+      fillCircle(x - offset, y, r);
+      ctx.fillStyle = ` + '`rgba(255,86,158,${alpha * 0.42})`' + String.raw`;
+      fillCircle(x + offset, y, r);
+    }
+  }
+  ctx.restore();
+}
+// Test-only geometry adapter: retain drawAtomicOrbits -> drawFoldingBand -> current mini/full
+// renderer, including PERF-5 glow stamps. Only the point producer becomes the allocating reference.
+function referenceScratchBand(rx, ry, width, foldPhase) {
+  const points = foldingBandGeometry(rx, ry, width, foldPhase);
+  const p = miniFoldingBandPoints;
+  points.forEach((point, i) => {
+    p.leftX[i] = point.left[0];
+    p.leftY[i] = point.left[1];
+    p.rightX[i] = point.right[0];
+    p.rightY[i] = point.right[1];
+    p.front[i] = point.front;
+  });
+  return points.length;
+}
+`;
+
 // Recording Canvas2D mock: every method call and property set lands in one ordered stream per context.
-function harness({ variant = 'mini', width = 240, height = 240, dpr = 1 } = {}) {
+function harness({ variant = 'mini', width = 240, height = 240, dpr = 1,
+    starCount, referenceSource = false, arithmeticReference = false, recordGradientStops = false } = {}) {
     const streams = new Map(), frames = [], events = {}, errors = [], created = [];
     let nextId = 0;
     const makeContext = () => {
@@ -436,7 +482,10 @@ function harness({ variant = 'mini', width = 240, height = 240, dpr = 1 } = {}) 
                 return (...args) => {
                     ops.push([name, ...args]);
                     if (String(name).startsWith('create'))
-                        return { gradient: name, args, stops: [], addColorStop(stop, color) { this.stops.push([stop, color]); } };
+                        return { gradient: name, args, stops: [], addColorStop(stop, color) {
+                            this.stops.push([stop, color]);
+                            if (recordGradientStops) ops.push(['addColorStop', stop, color]);
+                        } };
                 };
             },
             set(target, name, value) { ops.push([`=${String(name)}`, value]); target[name] = value; return true; }
@@ -466,9 +515,22 @@ function harness({ variant = 'mini', width = 240, height = 240, dpr = 1 } = {}) 
             documentElement: { classList: { add() {} } },
             addEventListener: (name, fn) => { events[name] = fn; } } });
     const html = read('processing/index.html');
-    for (const [, script] of html.matchAll(/<script src="([^"]+)"><\/script>/g))
-        vm.runInContext(read(`processing/${script}`), sandbox, { filename: `processing/${script}` });
+    for (const [, script] of html.matchAll(/<script src="([^"]+)"><\/script>/g)) {
+        let text = read(`processing/${script}`);
+        // Test-only config override: scene-data still generates every descriptor with its real RNGs.
+        if (script === 'js/config.js' && starCount !== undefined) {
+            assert.match(text, /const BACKGROUND_PARTICLE_COUNT = \d+;/);
+            text = text.replace(/const BACKGROUND_PARTICLE_COUNT = \d+;/, `const BACKGROUND_PARTICLE_COUNT = ${starCount};`);
+        }
+        if (referenceSource && script === 'js/layers.js') text = strip(text);
+        vm.runInContext(text, sandbox, { filename: `processing/${script}` });
+    }
     vm.runInContext(REFERENCE, sandbox, { filename: 'reference.js' });
+    vm.runInContext(ARITHMETIC_REFERENCE, sandbox, { filename: 'arithmetic-reference.js' });
+    if (arithmeticReference) vm.runInContext(`
+        drawCachedStars = referenceCachedStars;
+        miniFoldingBandGeometry = referenceScratchBand;
+    `, sandbox);
     const main = streams.get(scene0.id);
     const tick = ms => {
         assert.equal(frames.length, 1);
@@ -491,7 +553,11 @@ function harness({ variant = 'mini', width = 240, height = 240, dpr = 1 } = {}) 
         try { fn(); } finally { names.forEach((name, i) => { sandbox[name] = originals[i]; }); }
         return counts;
     };
-    const resize = (w, h) => { bounds.width = w; bounds.height = h; window.innerWidth = w; window.innerHeight = h; events.resize(); };
+    const resize = (w, h, nextDpr = window.devicePixelRatio) => {
+        bounds.width = w; bounds.height = h; window.innerWidth = w; window.innerHeight = h;
+        window.devicePixelRatio = nextDpr;
+        events.resize();
+    };
     return { sandbox, main, streams, created, errors, tick, capture, reference, callsTo, resize,
         evaluate: source => vm.runInContext(source, sandbox) };
 }
@@ -745,6 +811,278 @@ test('processing wallpaper (B5): sphere and orbit blocks keep the exact referenc
         }
         assert.deepEqual(h.errors, []);
     }
+});
+
+// No JSON round-trip or tolerance: preserve every numeric bit, including signed zero, and the
+// ordered gradient creation/stops/property assignments. Only mock method identities are irrelevant.
+function assertExact(actual, expected, where = '') {
+    if (typeof expected === 'number') {
+        assert.ok(Object.is(actual, expected), `${where}: ${actual} vs ${expected}`);
+    } else if (Array.isArray(expected)) {
+        assert.ok(Array.isArray(actual), where);
+        assert.equal(actual.length, expected.length, `${where} length`);
+        expected.forEach((value, i) => assertExact(actual[i], value, `${where}[${i}]`));
+    } else if (expected && typeof expected === 'object') {
+        assert.deepEqual(Object.keys(actual), Object.keys(expected), where);
+        for (const key of Object.keys(expected)) assertExact(actual[key], expected[key], `${where}.${key}`);
+    } else if (typeof expected === 'function') {
+        assert.equal(typeof actual, 'function', where);
+    } else assert.equal(actual, expected, where);
+}
+
+// Instrument the VM's Math, not the test runner's Math, and only after page initialization.
+function trigCalls(h, draw) {
+    const math = h.evaluate('Math'), originals = { sin: math.sin, cos: math.cos };
+    const calls = { sin: 0, cos: 0 };
+    for (const name of Object.keys(calls)) math[name] = (...args) => {
+        calls[name]++;
+        return originals[name](...args);
+    };
+    try { return { ops: h.capture(draw), calls }; }
+    finally { Object.assign(math, originals); }
+}
+
+// Getter instrumentation is value-preserving and sees prefix refreshes without counting test
+// oracle reads. Keeping the original records also detects replacement or a size-history cache.
+function directionReads(h) {
+    const records = Array.from(h.evaluate('starDirections'));
+    const reads = { cos: 0, sin: 0 };
+    for (const record of records) for (const name of Object.keys(reads)) {
+        const value = record[name];
+        Object.defineProperty(record, name, { configurable: true, enumerable: true,
+            get() { reads[name]++; return value; } });
+    }
+    return { records, reads, reset() { reads.cos = 0; reads.sin = 0; } };
+}
+
+const directionSnapshot = 'starDirections.map(({ cos, sin }) => ({ cos, sin }))';
+const descriptorSnapshot = '[stars, radialStreaks, aurora, filmGrain, orbitBlocks]';
+const futureRandom = 'Array.from({ length: 8 }, () => [rnd(), extraStarRandom()])';
+const scratchSnapshot = `Array.from({ length: miniFoldingBandPoints.segmentCount + 1 }, (_, i) => ({
+    left: [miniFoldingBandPoints.leftX[i], miniFoldingBandPoints.leftY[i]],
+    right: [miniFoldingBandPoints.rightX[i], miniFoldingBandPoints.rightY[i]],
+    front: miniFoldingBandPoints.front[i],
+}))`;
+
+function assertResourcesExact(h, r) {
+    assert.equal(h.created.length, r.created.length, 'same offscreen canvas count');
+    assert.equal(h.streams.size, r.streams.size, 'same context count');
+    // Includes every offscreen operation, gradient and property set, not just scene drawing.
+    assertExact([...h.streams.values()], [...r.streams.values()], 'all context streams');
+    assert.deepEqual(h.errors, []);
+    assert.deepEqual(r.errors, []);
+}
+
+test('processing C1: warm stars read no direction fields; CSS-only refresh is lazy and bounded', () => {
+    const h = harness({ width: 853.5, height: 479.25, starCount: 750 });
+    const { records, reads, reset } = directionReads(h);
+    h.sandbox.drawStars(...centre(h), 0, 0);
+    assert.deepEqual(reads, { cos: 750, sin: 750 }, 'cold prefix construction');
+    reset();
+    h.sandbox.drawStars(-0, -21.125, 0.61803, -1.5);
+    assert.deepEqual(reads, { cos: 0, sin: 0 }, 'warm draw must reuse prefixes');
+    for (const [width, height, dpr, refresh] of [
+        [900.75, 479.25, 1, true], [900.75, 600.5, 1, true],
+        [900.75, 600.5, 2, false], [853.5, 479.25, 2, true],
+        [853.5, 479.25, 1, false],
+    ]) {
+        reset();
+        h.resize(width, height, dpr);
+        assert.deepEqual(reads, { cos: 0, sin: 0 }, 'resize alone must not refresh');
+        h.sandbox.drawStars(...centre(h), -0.25, 8.1);
+        assert.deepEqual(reads, { cos: refresh ? 750 : 0, sin: refresh ? 750 : 0 });
+        const current = h.evaluate('starDirections');
+        assert.equal(current.length, records.length);
+        records.forEach((record, i) => {
+            assert.equal(current[i], record, 'refresh records in place');
+            assert.deepEqual(Object.keys(record).sort(), ['cos', 'sin', 'xPrefix', 'yPrefix']);
+            assertExact([record.xPrefix, record.yPrefix],
+                [record.cos * width * 0.77, record.sin * height * 0.91], 'ordered prefixes');
+        });
+        reset();
+        h.sandbox.drawStars(17.25, -0, 1.37, 2.9);
+        assert.deepEqual(reads, { cos: 0, sin: 0 }, 'repeated dimensions stay warm');
+    }
+    // Synthetic numeric edge: browser resize clamps dimensions, so exercise Object.is directly.
+    for (const dimensions of ['W = -0; H = 0', 'W = 0; H = 0', 'W = 0; H = -0']) {
+        h.evaluate(dimensions);
+        reset();
+        h.sandbox.drawStars(-0, -0, -0, -0);
+        assert.deepEqual(reads, { cos: 750, sin: 750 }, 'signed-zero dimension is a new key');
+    }
+    assert.deepEqual(h.errors, []);
+});
+
+test('processing C1: stars exactly replay the installed cached renderer, cold/warm and after resize', () => {
+    const coverage = new Set();
+    for (const variant of ['mini', 'full']) for (const [starCount, width, height, dpr] of [
+        [0, 320, 200, 1], [750, 3440, 1440, 1], [1279, 1080, 1920, 1.25],
+        [1280, 1920, 1080, 2], [1281, 240.25, 239.75, 3],
+    ]) {
+        const options = { variant, starCount, width, height, dpr, recordGradientStops: true };
+        const h = harness(options), r = harness({ ...options, arithmeticReference: true });
+        const descriptors = r.evaluate(descriptorSnapshot);
+        const directions = r.evaluate(directionSnapshot);
+        assertExact(h.evaluate(descriptorSnapshot), descriptors);
+        assertExact(h.evaluate(futureRandom), r.evaluate(futureRandom));
+        const states = [[0, 0], [-0, -0], [0.0371, 0.7], [0.5, 2.9], [1, Math.PI * 2],
+            [1.37, 8.1], [-0.25, -1.5], [9, 31]];
+        if (starCount === 750) {
+            const s = descriptors[0].find(s => s.glint);
+            const speed = s.speed * 0.24 * h.evaluate('BACKGROUND_PARTICLE_SPEED_MULTIPLIER');
+            for (const boundary of [0.52, 1]) for (const delta of [-1e-12, 0, 1e-12])
+                states.push([(boundary - s.z) / speed + delta, 4.4]);
+        }
+        for (const dimensions of [null, [width + 17.25, height, dpr],
+            [width + 17.25, height + 31.5, dpr], [width + 17.25, height + 31.5, 1.5],
+            [width, height, dpr]]) {
+            if (dimensions) { h.resize(...dimensions); r.resize(...dimensions); }
+            for (const [p, phase] of states) {
+                const args = [p === 0 ? -0 : centre(h)[0] + p, centre(h)[1] - phase, p, phase];
+                const expected = r.capture(() => r.sandbox.drawStars(...args));
+                const actual = trigCalls(h, () => h.sandbox.drawStars(...args));
+                assertExact(actual.ops, expected, `${variant}, ${starCount} stars, p=${p}, phase=${phase}`);
+                assert.deepEqual(actual.calls, { cos: 0, sin: starCount }, 'retain dynamic twinkle only');
+                assert.equal(count(actual.ops, 'createRadialGradient'), 0);
+                if (count(actual.ops, 'arc') > starCount) coverage.add('visible glints');
+                if (starCount && count(actual.ops, 'arc') < starCount + 2 * descriptors[0].filter(s => s.glint).length)
+                    coverage.add('hidden glints');
+            }
+        }
+        assertExact(h.evaluate(directionSnapshot), directions, 'directions ignore new prefix fields');
+        assertExact(h.evaluate(descriptorSnapshot), descriptors, 'descriptors unchanged');
+        assertExact(h.evaluate(futureRandom), r.evaluate(futureRandom), 'future RNG unchanged');
+        assertResourcesExact(h, r);
+    }
+    assert.deepEqual([...coverage].sort(), ['hidden glints', 'visible glints']);
+});
+
+test('processing C1: warm 84-segment scratch geometry uses one dynamic cosine per point', () => {
+    const h = harness({ width: 1920, height: 1440 });
+    h.sandbox.miniFoldingBandGeometry(300, 200, 12, 0);
+    const { calls } = trigCalls(h, () => h.sandbox.miniFoldingBandGeometry(300, 200, 12, 0.61803));
+    assert.equal(calls.cos, 85, '85 points must reuse the compression cosine for front');
+    assert.equal(calls.sin, 85, 'one dynamic skew sine per point');
+});
+
+test('processing C1: scratch coordinates and actual orbital painting exactly match reference geometry', () => {
+    for (const variant of ['mini', 'full']) for (const dpr of [1, 2]) {
+        const options = { variant, dpr, width: 1920, height: 1440, recordGradientStops: true };
+        const h = harness(options), r = harness({ ...options, arithmeticReference: true });
+        const buffers = h.evaluate('miniFoldingBandPoints');
+        const identities = Object.values(buffers).filter(value => typeof value === 'object');
+        // 84 -> 48 -> 81 -> 84 segments; DPR-only and repeated draws retain angle/scratch buffers.
+        for (const dimensions of [null, [320, 200, dpr], [1920, 1080, dpr],
+            [1920, 1080, 1.5], [1920, 1440, dpr]]) {
+            if (dimensions) { h.resize(...dimensions); r.resize(...dimensions); }
+            for (const progress of [0, -0, -0.25, 0.0371, 0.61803, 1, 1.37]) {
+                const args = [...centre(h), progress];
+                let actual, expected;
+                const allocations = h.callsTo(['foldingBandGeometry'], () => {
+                    actual = h.capture(() => h.sandbox.drawAtomicOrbits(...args));
+                });
+                const referenceAllocations = r.callsTo(['foldingBandGeometry'], () => {
+                    expected = r.capture(() => r.sandbox.drawAtomicOrbits(...args));
+                });
+                assert.equal(allocations.foldingBandGeometry, 0);
+                assert.equal(referenceAllocations.foldingBandGeometry, 3);
+                assertExact(actual, expected, `${variant}@${dpr} actual orbital renderer, p=${progress}`);
+                // Compare all five coordinate/front fields, not only coordinates reached by painting.
+                for (const [rx, ry, , width, phase] of h.sandbox.foldingBandParameters(progress)) {
+                    const points = h.sandbox.foldingBandGeometry(rx, ry, width, phase);
+                    assert.equal(h.sandbox.miniFoldingBandGeometry(rx, ry, width, phase), points.length);
+                    assertExact(h.evaluate(scratchSnapshot), points, 'all scratch points');
+                }
+            }
+        }
+        // Explicit signed-zero radii/width/phase protect Float64 storage and operation ordering.
+        const edgeArgs = [-0, -123.75, -0, -0];
+        const points = h.sandbox.foldingBandGeometry(...edgeArgs);
+        h.sandbox.miniFoldingBandGeometry(...edgeArgs);
+        assertExact(h.evaluate(scratchSnapshot), points, 'signed-zero geometry');
+        Object.values(buffers).filter(value => typeof value === 'object').forEach((value, i) => {
+            assert.equal(value, identities[i], 'scratch arrays are not replaced');
+            assert.equal(value.length, 85, 'bounded scratch capacity');
+        });
+        assertExact(h.evaluate(descriptorSnapshot), r.evaluate(descriptorSnapshot));
+        assertExact(h.evaluate(futureRandom), r.evaluate(futureRandom));
+        assertResourcesExact(h, r);
+    }
+});
+
+test('processing wallpaper: invariant star/streak trigonometry', () => {
+    assert.throws(() => assertExact([0], [-0]), /0 vs 0/, 'the oracle must distinguish signed zero');
+    const descriptorSource = '[stars, radialStreaks, aurora, filmGrain, orbitBlocks]';
+    let downstream;
+    const coverage = new Set();
+    for (const [starCount, width, height, dpr] of [
+        [0, 320, 200, 1], [750, 3440, 1440, 1], [1279, 1080, 1920, 1.25],
+        [1280, 1920, 1080, 2], [1281, 240.25, 239.75, 3],
+    ]) {
+        const options = { variant: 'full', starCount, width, height, dpr, recordGradientStops: true };
+        const h = harness(options), r = harness({ ...options, referenceSource: true });
+        const descriptors = r.evaluate(descriptorSource);
+        assertExact(h.evaluate(descriptorSource), descriptors, 'seeded descriptors at initialization');
+        assert.equal(descriptors[0].length, starCount);
+        if (downstream) assertExact(descriptors.slice(1), downstream, 'star count cannot shift downstream RNG');
+        downstream = descriptors.slice(1);
+        // Compare future samples too: catches RNG use during direction-table construction even if
+        // the already-completed scene descriptors are left untouched.
+        const nextRandom = 'Array.from({ length: 8 }, () => [rnd(), extraStarRandom()])';
+        assertExact(h.evaluate(nextRandom), r.evaluate(nextRandom), 'RNG state after initialization');
+        const speedMultiplier = h.evaluate('BACKGROUND_PARTICLE_SPEED_MULTIPLIER');
+        const states = [[0, 0], [-0, -0], [0.0371, 0.7], [0.5, 2.9], [1, Math.PI * 2],
+            [1.37, 8.1], [-0.25, -1.5], [9, 31]];
+        // Exercise both sides of the real seeded visibility, glint and fract-wrap boundaries,
+        // without editing any descriptor or replacing either draw function.
+        if (starCount === 750) {
+            const glint = descriptors[0].find(s => s.glint), streak = descriptors[1][0];
+            const starSpeed = glint.speed * 0.24 * speedMultiplier;
+            for (const [s, speed, boundary] of [[glint, starSpeed, 0.52], [glint, starSpeed, 1],
+                [streak, streak.speed * 0.64, 0.72], [streak, streak.speed * 0.64, 1]]) {
+                const p = (boundary - s.z) / speed;
+                for (const delta of [-1e-12, 0, 1e-12]) states.push([p + delta, 4.4]);
+            }
+        }
+        for (const resized of [false, true]) {
+            if (resized) {
+                h.resize(853.5, 479.25, 1.5);
+                r.resize(853.5, 479.25, 1.5);
+            }
+            for (const [p, phase] of states) {
+                const label = `${starCount} stars ${width}x${height}@${dpr}, resized=${resized}, p=${p}`;
+                const starArgs = [...centre(h), p, phase];
+                const expectedStars = r.capture(() => r.sandbox.drawStars(...starArgs));
+                const stars = trigCalls(h, () => h.sandbox.drawStars(...starArgs));
+                assertExact(stars.ops, expectedStars, `stars ${label}`);
+                assert.equal(stars.calls.cos, 0, `star angle cos calls: ${label}`);
+                assert.equal(stars.calls.sin, starCount, `one dynamic twinkle sin per star: ${label}`);
+                if (count(stars.ops, 'arc') > starCount) coverage.add('glints');
+                for (const s of descriptors[0]) {
+                    const unwrapped = s.z + p * s.speed * 0.24 * speedMultiplier;
+                    const z = unwrapped - Math.floor(unwrapped);
+                    coverage.add(s.warm ? 'warm' : 'cold');
+                    if (s.glint && z <= 0.52) coverage.add('hidden glints');
+                    if (unwrapped >= 1 || unwrapped < 0) coverage.add('star wrap');
+                }
+                const streakArgs = [...centre(h), p];
+                const expectedStreaks = r.capture(() => r.sandbox.drawRadialStreaks(...streakArgs));
+                const streaks = trigCalls(h, () => h.sandbox.drawRadialStreaks(...streakArgs));
+                assertExact(streaks.ops, expectedStreaks, `streaks ${label}`);
+                assert.deepEqual(streaks.calls, { sin: 0, cos: 0 }, `no streak trig: ${label}`);
+                const visible = count(streaks.ops, 'createLinearGradient');
+                if (visible > 0) coverage.add('visible streaks');
+                if (visible < descriptors[1].length) coverage.add('hidden streaks');
+                if (descriptors[1].some(s => s.z + p * s.speed * 0.64 >= 1)) coverage.add('streak wrap');
+            }
+        }
+        assertExact(h.evaluate(descriptorSource), descriptors, 'draw/resize leaves descriptors unchanged');
+        assertExact(h.evaluate(nextRandom), r.evaluate(nextRandom), 'draw/resize leaves RNG state unchanged');
+        assert.deepEqual(h.errors, []);
+        assert.deepEqual(r.errors, []);
+    }
+    assert.deepEqual([...coverage].sort(), ['cold', 'glints', 'hidden glints', 'hidden streaks',
+        'star wrap', 'streak wrap', 'visible streaks', 'warm']);
 });
 
 // PERF-5: the wallpaper core stamps its spoke and disc glows, so the reference shapes are compared without shadows.
