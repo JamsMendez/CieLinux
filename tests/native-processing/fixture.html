@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src qrc:; style-src qrc: 'unsafe-inline'; font-src qrc:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Processing load/buffer smoke</title>
+<link rel="stylesheet" href="qrc:/processing/styles.css" />
+<style>
+/* Fixed DOM bounds, not a scaled preview. The small native viewport clips these canvases. */
+#scene, #nebula { width: 3440px; height: 1440px; }
+</style>
+</head>
+<body>
+<canvas id="nebula" aria-hidden="true" tabindex="-1"></canvas>
+<canvas id="scene" aria-label="Full Processing smoke"></canvas>
+<script src="qrc:/processing/js/config.js"></script>
+<script src="qrc:/processing/js/math.js"></script>
+<script src="qrc:/processing/js/nebula.js"></script>
+<script src="qrc:/processing/js/sphere.js"></script>
+<script src="qrc:/processing/js/scene-data.js"></script>
+<script src="qrc:/processing/js/sprites.js"></script>
+<script src="qrc:/processing/js/layers.js"></script>
+<script src="qrc:/processing/js/see-through-hook.js"></script>
+<script src="qrc:/shared/js/alert-overlay.js"></script>
+<script src="qrc:/processing/js/render-loop.js"></script>
+<script src="qrc:/processing/js/main.js"></script>
+<script src="qrc:/native-processing/driver.js"></script>
+</body>
+</html>
