@@ -29,8 +29,8 @@ Item {
             return { x: w / 2, y: h / 2, radius: side * 0.44 }
         case "processing": // main.js render() centre; in-page base fades out at 0.40.
             return { x: w * 0.505, y: h * 0.515, radius: side * 0.40 }
-        case "raphael": // main.js: rimRadius = (side/2 - 50) * MINI_SCENE_ZOOM 1.3507 (B6); falloff * 1.06.
-            return { x: w * 0.505, y: h * 0.515, radius: (side / 2 - 50) * 1.3507 * 1.06 }
+        case "raphael": // main.js: mini centre W/2,H/2; rimRadius = MINI_RING_RADIUS_FRACTION 0.40 * side (T3); falloff * 1.06.
+            return { x: w / 2, y: h / 2, radius: side * 0.40 * 1.06 }
         default: // Unknown scene: no disc.
             return { x: w / 2, y: h / 2, radius: 0 }
         }

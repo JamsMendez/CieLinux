@@ -23,14 +23,17 @@ const referenceSha256 = {
     // Re-pinned after old-name→CielWin comment rename (text-only); was 5d78271d01daec3d292ed74fa2314b6275f6bccff31f0d8f1f24f619f04141c7
     // Re-pinned for B6 (MINI_SCENE_ZOOM 1.2 -> 1.3507 plus its comment; mini-only, the wallpaper uses viewZoom);
     // was 27eb358a85f00038e52b4fdb3848ba04db3adceab752905407df51dccbf514d8 (undoing B6 restores it, tested below)
-    config: 'a4db30f066cb0db05fc64f02d9b7c2769c912c5f3cd7876945948e5c9aa83edc',
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was a4db30f066cb0db05fc64f02d9b7c2769c912c5f3cd7876945948e5c9aa83edc
+    config: '3c9400773ac3d8c686f24e83094938edecd680b75e86d76302fa0d9f6eab183c',
     math: 'd2bef6c68490200c732b3f3dd906b1ab77bfb8bcc7353f3313e55a4e0be20f1e',
-    hexadecagon: '16f3df7983f4d9bd113ff831cbd224ffca0f032b1e2edd38e3facff241a74999',
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was 16f3df7983f4d9bd113ff831cbd224ffca0f032b1e2edd38e3facff241a74999
+    hexadecagon: '470fc76699996967b457242b8715209809b6d6b215a65b8c5c25ca7b53d8baad',
     sphere: '130aa6b7822ce0a161ef62ab2bf42d31cfe2786796d2f50fa16f86025f2c4645',
     'scene-data': '83ce96f8fdb11246bca17e733f504b9f87297c5fc5c4edf29318630ffaafb62e',
     feathers: 'bd0080b4c2d08311fa8a62f56814f16e9bf9fb4d5956f6aa740f61f3e4e613c2',
     glyphs: 'd0d434c668c2cf2b7a7afc004daf620050d0de62c07bf71b045f1082daf3b265',
-    'glyph-rings': 'fd53bc0dcc4e23656db92c1a15c34175a1c980829d1545631963f0b2e19331b9',
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was fd53bc0dcc4e23656db92c1a15c34175a1c980829d1545631963f0b2e19331b9
+    'glyph-rings': 'de5af877e332060f6210b7dd762d2c43fa28a72a7df76b6ddf04c28787fb3552',
     digits: 'f042fa5afc0c1666065f939d396882723ae722dae8a20e431606aeb1ca3394fd',
     'central-core': '76d8ec4b30810e005b0b9c5c69bc0568f9e05947a3b9e0765613011f7cff2bf8',
     // Linux mini optimization (O3, odd/tasks/mini-scene-optimization.md); CielWin reference: b97ab8fba52b6255e33909d470ff871eb269c6125d9cdeb9b736049b55af8ee5
@@ -41,7 +44,8 @@ const referenceSha256 = {
     // Re-pinned for B5 (wallpaper uses the delimiter layer and cached core gradients); was 731e58cc614ed87d88dc6a88246883f0a9d8ce08f09d6dcf4b0827644fc00460
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was a1fa128ba2f159265f8572e57a4e751ad9dcb6acc3747ecc3e5b08420554285e
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was aff3013c638f8780fb0cba5d7468a8cf55cdb08c43db3deb47b3746704affa1a
-    layers: '9a1a1b2f106174a01e091cb02906ec5bdad8ada9242640adb425e9d60f36aed4',
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was 9a1a1b2f106174a01e091cb02906ec5bdad8ada9242640adb425e9d60f36aed4
+    layers: '8bc2eba507ba2f03bd2cea0982600c59a56a011c019023dbf93f814cf4f2a3e3',
 };
 // Reference nebula.js minus its two unbounded console.error lines, which the diagnostics replace.
 // Re-pinned after old-name→CielWin comment rename (text-only); was c1ba2023e1b91580bfb5ac671215cd8e840d0387c07125358da17f98d35d6576
@@ -143,7 +147,8 @@ test('raphael page loads the packaged scene scripts plus the CielWin alert hook 
 test('raphael see-through hook is the CielWin hook', () => {
     const hook = read('raphael/js/see-through-hook.js');
     const stripped = hook.replace(/^\/\/ Linux port begin[^\n]*\n[\s\S]*?^\/\/ Linux port end\.\n\n/gm, '');
-    assert.equal(sha256(stripped), 'd6f6c34f4af60e7fb5b1566393d5a347b303639796fe87d54fb13961af9f1720');
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was d6f6c34f4af60e7fb5b1566393d5a347b303639796fe87d54fb13961af9f1720
+    assert.equal(sha256(stripped), '695b167cfa2a1db132ac8cd90fa763f7a3ddf9c655670033ec0dbccbf7ce927b');
     assert.match(hook, /^function sceneSeeThroughLayer\(g, sceneW, sceneH, /m);
 });
 
@@ -172,11 +177,20 @@ test('scene render files are byte-identical to the pinned CielWin reference', ()
         'one Linux render-loop adapter content for every ported scene');
 });
 
-test('B6 is the only change to config.js: undoing it restores the previous pinned hash', () => {
+test('B6 and T3 are the only changes to config.js: undoing them restores the previous pinned hash', () => {
     const config = read('raphael/js/config.js');
-    const b6 = /\/\/ B6 \(CieLinux\):[^\n]*\n(?:\/\/[^\n]*\n)*const MINI_SCENE_ZOOM = 1\.3507;/;
-    assert.match(config, b6);
-    const undone = config.replace(b6, 'const MINI_SCENE_ZOOM = 1.2;');
+    // T3 (odd/tasks/scene-wallpaper-scaling.md) extended the B6 block with MINI_RING_RADIUS_FRACTION and retuned the
+    // mini nebula fade (0.75..0.98 -> 0.68..0.89) with its comment; undoing both restores the pre-B6 text.
+    const b6t3 = /\/\/ B6 \(CieLinux\):[^\n]*\n(?:\/\/[^\n]*\n)*const MINI_SCENE_ZOOM = 1\.3507;\n(?:\/\/[^\n]*\n)*const MINI_RING_RADIUS_FRACTION = 0\.40;\n(?:\/\/[^\n]*\n)*const MINI_NEBULA_FADE_START = 0\.68;\nconst MINI_NEBULA_FADE_END = 0\.89;/;
+    assert.match(config, b6t3);
+    const undone = config.replace(b6t3, [
+        'const MINI_SCENE_ZOOM = 1.2;',
+        "// mini-scene-window T2e: the mini nebula's alpha fade, in half-side units from the window center",
+        "// (1.0 = the middle of an edge). Wider than processing's (0.5..0.9) so the gold cloud reaches out toward",
+        '// the edges, but it is 0 at 0.98, so every edge and corner pixel stays fully transparent.',
+        'const MINI_NEBULA_FADE_START = 0.75;',
+        'const MINI_NEBULA_FADE_END = 0.98;',
+    ].join('\n'));
     assert.equal(sha256(undone), '27eb358a85f00038e52b4fdb3848ba04db3adceab752905407df51dccbf514d8');
 });
 
