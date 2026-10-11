@@ -12,7 +12,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { ROOT, SRC, ASSETS, source } from './paths.mjs';
 
 const read = name => readFileSync(source(name), 'utf8');
-const RAPHAEL_MINI_ICO_SHA256 = 'd4dcf57fb176faf2b40ccbfa30ad17364f41ec4ce718d4c72978c85e7b5e5574';
+const RAPHAEL_MINI_ICO_SHA256 = '2c1b10e77470f5640f6c36191e681716e3f9ac382039d3b1ecce21d7095ffda3';
 let binary, fixture;
 
 const run = (program, args, env = process.env) => {
