@@ -87,7 +87,9 @@ function drawGoldenHexadecagon(cx, cy, progress, pulse) {
   const pulseStroke = 1 + pulse * HEXADECAGON_PULSE_STROKE_FACTOR;
   const pulseBlur = HEXADECAGON_PULSE_BLUR_BASE + pulse * HEXADECAGON_PULSE_BLUR_RANGE;
   const vertices = hexadecagonVertices(r, pulse);
-  const chromaticStrokeWidth = r * HEXADECAGON_STROKE_WIDTH_FACTOR * pulseStroke;
+  // CielWin fixes port (odd/tasks/shared-scenes.md): the mini stroke is rescaled by 1.2 / MINI_SCENE_ZOOM, as in layers.js.
+  const miniStrokeK = isMiniVariant ? 1.2 / MINI_SCENE_ZOOM : 1;
+  const chromaticStrokeWidth = r * HEXADECAGON_STROKE_WIDTH_FACTOR * pulseStroke * miniStrokeK;
   const chromaticOffsetPx = r * HEXADECAGON_CHROMATIC_OFFSET_FACTOR;
   ctx.save();
   ctx.translate(cx, cy);
@@ -629,7 +631,8 @@ test('raphael mini: per-frame draw calls, gradients and blurred draws drop again
 test('raphael O3 changes are removable marked blocks over the CielWin reference', () => {
     const strip = source => source.replace(/^[ \t]*\/\/ Linux mini optimization begin[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux mini optimization end\.\n/gm, '');
     // Re-pinned after old-name→CielWin comment rename (text-only); was 2a745ee5c5757d09eb475b30fab349ba53cb79d63321dc234fbdef24537de2fc
-    assert.equal(sha256(strip(read('raphael/js/layers.js'))), 'e6265d4759314ffb58b143b4af56edfb16cd20b0fea3530d172f207eab906c68');
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was e6265d4759314ffb58b143b4af56edfb16cd20b0fea3530d172f207eab906c68
+    assert.equal(sha256(strip(read('raphael/js/layers.js'))), 'b79123a36d754a66a7d26c73e9a33cba258d4dd27f873bcc7dd2c7484652b871');
     assert.equal(sha256(strip(read('raphael/js/sprites.js'))), 'b97ab8fba52b6255e33909d470ff871eb269c6125d9cdeb9b736049b55af8ee5');
     for (const name of ['layers', 'sprites'])
         assert.match(read(`raphael/js/${name}.js`), /\/\/ Linux mini optimization begin \(O3\)/, name);
