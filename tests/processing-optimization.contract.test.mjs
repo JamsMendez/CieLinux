@@ -1010,6 +1010,31 @@ test('processing C1: scratch coordinates and actual orbital painting exactly mat
     }
 });
 
+// odd/tasks/scene-identical-caches.md T1: the wallpaper vignette gradient depends only on (ctx, W, H), so it
+// is created once per size and reused; every frame still sets the same gradient geometry/stops and fills.
+test('processing wallpaper: vignette gradient is created once per canvas size, not per frame', () => {
+    const options = { variant: 'full', width: 320, height: 200, recordGradientStops: true };
+    const h = harness(options), r = harness({ ...options, referenceSource: true });
+    const withoutCreation = ops => json(ops.filter(op => op[0] !== 'createRadialGradient' && op[0] !== 'addColorStop'));
+    // W/H are CSS pixels and the gradient lives in user space, so a DPR-only resize keeps the cached one.
+    let first = true;
+    for (const [width, height, dpr, fresh] of [[320, 200, 1, 1], [320, 200, 2, 0], [1920, 1080, 1.5, 1], [853.5, 479.25, 1.5, 1]]) {
+        if (!first) { h.resize(width, height, dpr); r.resize(width, height, dpr); }
+        first = false;
+        let created = 0;
+        for (let frame = 0; frame < 4; frame++) {
+            const expected = r.capture(() => r.sandbox.drawVignette());
+            const ops = h.capture(() => h.sandbox.drawVignette());
+            assert.equal(count(expected, 'createRadialGradient'), 1, 'the reference builds the gradient every frame');
+            created += count(ops, 'createRadialGradient');
+            assert.deepEqual(withoutCreation(ops), withoutCreation(expected), `${width}x${height}@${dpr} frame ${frame}`);
+        }
+        assert.equal(created, fresh, `${width}x${height}@${dpr}: at most one gradient for every frame at this size`);
+    }
+    assert.deepEqual(h.errors, []);
+    assert.deepEqual(r.errors, []);
+});
+
 test('processing wallpaper: invariant star/streak trigonometry', () => {
     assert.throws(() => assertExact([0], [-0]), /0 vs 0/, 'the oracle must distinguish signed zero');
     const descriptorSource = '[stars, radialStreaks, aurora, filmGrain, orbitBlocks]';
