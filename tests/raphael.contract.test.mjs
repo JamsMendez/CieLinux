@@ -40,7 +40,8 @@ const referenceSha256 = {
     // Re-pinned after old-name→CielWin comment rename (text-only); was 33d28a90a373dffe0d3354b54e1d3be9706f2c5b853154d77a9bb3b442af86a9
     // Re-pinned for B5 (wallpaper uses the delimiter layer and cached core gradients); was 731e58cc614ed87d88dc6a88246883f0a9d8ce08f09d6dcf4b0827644fc00460
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was a1fa128ba2f159265f8572e57a4e751ad9dcb6acc3747ecc3e5b08420554285e
-    layers: 'aff3013c638f8780fb0cba5d7468a8cf55cdb08c43db3deb47b3746704affa1a',
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was aff3013c638f8780fb0cba5d7468a8cf55cdb08c43db3deb47b3746704affa1a
+    layers: '9a1a1b2f106174a01e091cb02906ec5bdad8ada9242640adb425e9d60f36aed4',
 };
 // Reference nebula.js minus its two unbounded console.error lines, which the diagnostics replace.
 // Re-pinned after old-name→CielWin comment rename (text-only); was c1ba2023e1b91580bfb5ac671215cd8e840d0387c07125358da17f98d35d6576

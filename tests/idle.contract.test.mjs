@@ -24,7 +24,8 @@ const referenceSha256 = {
     math: '5507d42ea5685aac5af4a132c0fc2b8dff62b50ce9503e4666a46c3c24f52e91',
     glyphs: '57284fa7cdceede3f0d79e4a95bf7df717ef35f69b8d2ac5cb492ea508f95b86',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88; CielWin reference: aec872a4c6ea50409cfed6cd15a93593b1e267628079edffbd57447b6ee87d5c
-    earth: 'ab076276fc5d037782f9228699881d19fc8ea7e242ba59dcd494099faa46bb1d',
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was ab076276fc5d037782f9228699881d19fc8ea7e242ba59dcd494099faa46bb1d
+    earth: '5b4815bc9c691d02f62b93a43abde0079f7afd6aa9d5bdd07bdca7fe7ebb483c',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: 7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70; CielWin reference: 1dde4516d984afabfe84aeca85e17f8496dd15221a91eb7ae8e75ce7c6aae9d5
     rings: 'cebf294e99feae3defdafa3cba29d6375774ed2d5f1a5803a5d35206843431ae',
     // Re-pinned after old-name→CielWin comment rename (text-only); was 231a4faf26467d05f206301f69b0613f0974ade0c43e680685c911961724f3ae
@@ -32,7 +33,8 @@ const referenceSha256 = {
 };
 // Reference animate.js before its "Main animation loop" section, minus the
 // CONSTELLATION_RING_INDEX block (and its blank line) that only fed see-through-hook.js.
-const animatePrefixWithoutHookIndexSha256 = '900646f3dd182a2ad5711dab58c54ac37551df8c12311f9b1fe347f612908dd0';
+// Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was 900646f3dd182a2ad5711dab58c54ac37551df8c12311f9b1fe347f612908dd0
+const animatePrefixWithoutHookIndexSha256 = 'f7bb58dbb6aee267f6b92b7cc709d8022650229569b9f7e5f9bbe0f6754e0b6a';
 const loopMarker = '// --- Main animation loop';
 // Files that deliberately diverge from the CielWin reference for the Linux mini optimization (O1).
 const linuxMiniOptimized = ['earth', 'rings'];

@@ -14,7 +14,8 @@ const R1_BLOCK = /(?:\n(?=\/\/ Linux port begin \(R1\)))?^[ \t]*\/\/ Linux port 
 const R1_HOOK_BLOCK = /^\/\/ Linux port begin \(R1\)[^\n]*\n[\s\S]*?^\/\/ Linux port end\.\n\n/gm;
 
 const PRE_R1 = {
-    'shared/js/alert-overlay.js': '103022454cca637f575d8d8ea4ed4207e3ba3bc50c513ebaa69e30c8d516ae24',
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was 103022454cca637f575d8d8ea4ed4207e3ba3bc50c513ebaa69e30c8d516ae24
+    'shared/js/alert-overlay.js': 'dbc6a33158020de1f227bad11ff4257c8d40e010d3cfc04a2ca43a21ea2cfabd',
     'raphael/js/see-through-hook.js': 'd6f6c34f4af60e7fb5b1566393d5a347b303639796fe87d54fb13961af9f1720',
     'processing/js/see-through-hook.js': 'ff0dc530ca117e5cda5849ebb2b0520b7517dd0385fcf27c7c2f30558037bd05',
     'explorer/js/see-through-hook.js': '4ee5d0bfe8a7d148f411842c48eaf25517f12f3270f91a3d298b7c12df9e62f2',

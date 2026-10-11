@@ -26,10 +26,12 @@ const stripW1 = text => text
 
 // Pre-W1 pins (the hashes explorer/idle/alerts contract tests pinned before W1).
 const PRE_W1 = {
-    'explorer/js/earth.js': 'c7e2bbc5c6be17389d27632604d14679b8a8b0ada0f063447ddbd622136a822e',
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was c7e2bbc5c6be17389d27632604d14679b8a8b0ada0f063447ddbd622136a822e
+    'explorer/js/earth.js': '4a67423de241f33caec53bb1e72668be58ac8ca11e7850d29f46a835200ecfb3',
     'explorer/js/rings.js': '5fbbf2e05ce270ae388f41ec83513108963577cdf1ce689cdac925be8588f68f',
     'explorer/js/rising-sparks.js': '2ad6813e392bb5a948a9fa3f30c49364a190fb7cc20979fa25dd685f1ce24201',
-    'idle/js/earth.js': 'ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88',
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88
+    'idle/js/earth.js': '7a0b05ee2c92cc799565bbad9bbd518eef4d5fccfa7e13ee0c82b65af39b776e',
     'idle/js/rings.js': '7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70',
 };
 
@@ -444,7 +446,8 @@ const stripW4 = text => text.replace(
 // alert-overlay.js and explorer/js/animate.js as installed with W1 (build 0bf0b4d0).
 const PRE_W4 = {
     'shared/js/alert-overlay.js': '5c6cd27e7ce5257fb0761e7389bced1233e6375195f3b2654886420d8e1ebfab',
-    'explorer/js/animate.js': '3fd5fa3241be1929f582efe1a2c0d5ddb09f59de7fc7481e6597cb168f2e00a2',
+    // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was 3fd5fa3241be1929f582efe1a2c0d5ddb09f59de7fc7481e6597cb168f2e00a2
+    'explorer/js/animate.js': '821697c4b6cdb01f1f45ceabe5df92c8478870309292008c71c12252a201dec2',
 };
 const opsSince = (h, marks) => h.contexts.map((c, k) => ({ c, ops: c.ops.slice(marks[k] ?? 0) }));
 const marksOf = h => h.contexts.map(c => c.ops.length);
