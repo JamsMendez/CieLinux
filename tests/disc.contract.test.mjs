@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { SRC, source } from './paths.mjs';
 const read = name => readFileSync(source(name), 'utf8');
 
@@ -66,21 +67,30 @@ test('per-scene disc geometry at 240x240 matches each scene\'s own drawing geome
     assert.match(processing, /drawMiniSceneBase\(ctx, cx, cy, Math\.min\(W, H\) \* 0\.32, Math\.min\(W, H\) \* 0\.40\)/);
     const p = disc('processing', 240, 240);
     close(p.x, 121.2); close(p.y, 123.6); close(p.radius, 96);
-    // raphael: same centre; falloff = rimRadius * 1.06, rimRadius = blue outer radius * MINI_SCENE_ZOOM,
-    // blue outer = coreRadius(min) * BLUE_OUTER_FACTOR = min/2 - GLYPH_SYSTEM_OUTER_MARGIN_PX.
+    // raphael (odd/tasks/scene-wallpaper-scaling.md T3): mini centre W/2,H/2 like idle/explorer; falloff =
+    // rimRadius * 1.06, rimRadius = blue outer radius * MINI_SCENE_ZOOM = MINI_RING_RADIUS_FRACTION * short side.
     const raphael = read('raphael/js/main.js');
-    assert.match(raphael, /var cx = W \* 0\.505;\s*var cy = H \* 0\.515;/);
+    assert.match(raphael, /var cx = isMiniVariant \? W \/ 2 : W \* 0\.505;\s*var cy = isMiniVariant \? H \/ 2 : H \* 0\.515;/);
     assert.match(raphael, /const rimRadius = outermostRing\.outerRadius \* MINI_SCENE_ZOOM;\s*drawMiniSceneBase\(ctx, cx, cy, rimRadius, rimRadius \* 1\.06\);/);
-    const config = read('raphael/js/config.js');
-    const margin = constant(config, 'GLYPH_SYSTEM_OUTER_MARGIN_PX');
-    const zoom = constant(config, 'MINI_SCENE_ZOOM');
-    const blueFactor = constant(config, 'GLYPH_RING_BLUE_OUTER_FACTOR');
-    assert.deepEqual([margin, zoom, blueFactor], [50, 1.3507, 2.35]); // B6: was 1.2
-    const rim = (240 / 2 - margin) / blueFactor * blueFactor * zoom;
-    const r = disc('raphael', 240, 240);
-    close(r.x, 121.2); close(r.y, 123.6); close(r.radius, rim * 1.06);
-    close(r.radius, 100.22194); // B6: was 89.04 at zoom 1.2
+    for (const side of [240, 200, 180]) {
+        const r = disc('raphael', side, side);
+        close(r.x, side / 2); close(r.y, side / 2);
+        close(r.radius, raphaelMiniRing(side) * 1.06);
+        close(r.radius, side * 0.40 * 1.06);
+    }
 });
+
+// The raphael mini's outer ring (blue outer radius, magnified by MINI_SCENE_ZOOM) as the page computes it:
+// hexadecagon.js's coreRadius evaluated in mini with config.js's constants.
+function raphaelMiniRing(side) {
+    const config = read('raphael/js/config.js');
+    const names = ['MINI_RING_RADIUS_FRACTION', 'MINI_SCENE_ZOOM', 'GLYPH_RING_BLUE_OUTER_FACTOR',
+        'GLYPH_SYSTEM_OUTER_MARGIN_PX', 'HEXADECAGON_FALLBACK_RADIUS_FACTOR'];
+    const sandbox = vm.createContext({ isMiniVariant: true, Math,
+        ...Object.fromEntries(names.map(name => [name, constant(config, name)])) });
+    vm.runInContext(read('raphael/js/hexadecagon.js'), sandbox, { filename: 'raphael/js/hexadecagon.js' });
+    return vm.runInContext(`coreRadius(${side}) * GLYPH_RING_BLUE_OUTER_FACTOR * MINI_SCENE_ZOOM`, sandbox);
+}
 
 test('scene -> disc mapping is host-owned: C++ passes the validated scene name, QML never reads the page', () => {
     const qml = read('view.qml');
@@ -97,19 +107,20 @@ test('scene -> disc mapping is host-owned: C++ passes the validated scene name, 
     assert.match(control, /value == QStringLiteral\("processing"\) \|\| value == QStringLiteral\("raphael"\) \|\|\s*value == QStringLiteral\("idle"\) \|\| value == QStringLiteral\("explorer"\)/);
 });
 
-test('B6: raphael mini outer ring matches idle/explorer at 240 px and stays inside the opaque edge-fade radius', () => {
+test('B6/T3: raphael mini outer ring matches idle/explorer at every size and stays inside the opaque edge-fade radius', () => {
     // idle/explorer fit their disc-border outer radius to MINI_RING_RADIUS_FRACTION of the short side.
-    const side = 240;
-    const idleRing = side * constant(read('idle/js/config.js'), 'MINI_RING_RADIUS_FRACTION');
-    const explorerRing = side * constant(read('explorer/js/config.js'), 'MINI_RING_RADIUS_FRACTION');
-    close(idleRing, 96); close(explorerRing, 96);
-    // raphael: blue outer ring = (side/2 - margin) * MINI_SCENE_ZOOM about its centre (0.505W, 0.515H).
-    const config = read('raphael/js/config.js');
-    const ring = (side / 2 - constant(config, 'GLYPH_SYSTEM_OUTER_MARGIN_PX')) * constant(config, 'MINI_SCENE_ZOOM');
-    const offset = Math.hypot(side * 0.005, side * 0.015);
-    const opaque = side * 0.41; // render-loop.js MINI_EDGE_FADE_INNER
-    // Tolerance: the exact 96 px does not fit with the 3.79 px centre offset, so the ring must be
-    // >= 94 px (within 2 px of idle) and its far edge must stay <= the 98.4 px opaque radius.
-    assert.ok(ring >= 94 && Math.abs(ring - idleRing) <= 2, `raphael ring ${ring} px vs idle ${idleRing} px`);
-    assert.ok(ring + offset <= opaque, `raphael ring far edge ${ring + offset} px > ${opaque} px`);
+    const fraction = constant(read('idle/js/config.js'), 'MINI_RING_RADIUS_FRACTION');
+    assert.equal(constant(read('explorer/js/config.js'), 'MINI_RING_RADIUS_FRACTION'), fraction);
+    assert.equal(constant(read('raphael/js/config.js'), 'MINI_RING_RADIUS_FRACTION'), fraction);
+    // T3 (odd/tasks/scene-wallpaper-scaling.md): raphael is centred at (W/2, H/2) and its outer ring is
+    // proportional (no 50 px margin in mini), so it is exactly idle's 0.40 * side at every size, and its
+    // far edge (ring + half the 2 px delimiter, magnified) stays inside the 0.41 opaque radius.
+    for (const side of [288, 240, 200, 180]) {
+        const ring = raphaelMiniRing(side);
+        close(ring, side * fraction);
+        const delimiter = constant(read('raphael/js/config.js'), 'GLYPH_RING_DELIMITER_WIDTH') / 2
+            * constant(read('raphael/js/config.js'), 'MINI_SCENE_ZOOM');
+        const opaque = side * 0.41; // render-loop.js MINI_EDGE_FADE_INNER
+        assert.ok(ring + delimiter <= opaque, `raphael ring far edge ${ring + delimiter} px > ${opaque} px at ${side}`);
+    }
 });

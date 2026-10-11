@@ -794,14 +794,23 @@ test('processing mini: a steady frame creates no gradients and no offscreen canv
 // streams differ from the reference by design; blur-free-glow.contract.test.mjs checks that they keep
 // every reference shape. They still run without the allocating helpers.
 const PERF5_GLOW_LAYERS = new Set(['drawAtomicOrbits', 'drawPerspectiveRays']);
+// Wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md T1): below a 1080 px short side the wallpaper orbit
+// blocks (and their glow) shrink with the structure: each block's reference stream gains one
+// scale(k, k), k = min(1, min(W, H) / 1080), right after its rotate. At >= 1080 the stream is the exact reference.
+const wallpaperOrbitBlockScale = (width, height) => Math.min(1, Math.min(width, height) / 1080);
+const withOrbitBlockScale = (ops, k) => k === 1 ? ops
+    : ops.flatMap(op => op[0] === 'rotate' ? [op, ['scale', k, k]] : [op]);
+
 test('processing wallpaper (B5): sphere and orbit blocks keep the exact reference stream; no layer calls the allocating helpers', () => {
-    for (const [width, height, dpr] of [[320, 200, 1], [1920, 1080, 1], [1280, 720, 2]]) {
+    for (const [width, height, dpr] of [[320, 200, 1], [1920, 1080, 1], [1280, 720, 2], [800, 450, 1]]) {
         const h = harness({ variant: 'full', width, height, dpr });
         h.tick(0);
         for (const ms of [1234, 9999, 17321]) {
             for (const [name, argsAt, helpers] of EXACT) {
                 const args = argsAt(h, ms);
-                const expected = h.reference(name, ...args);
+                const reference = h.reference(name, ...args);
+                const expected = name === 'drawOrbitBlocks'
+                    ? withOrbitBlockScale(reference, wallpaperOrbitBlockScale(width, height)) : reference;
                 let ops;
                 const calls = h.callsTo(helpers, () => { ops = h.capture(() => h.sandbox[name](...args)); });
                 if (!PERF5_GLOW_LAYERS.has(name))
@@ -1148,7 +1157,10 @@ test('processing wallpaper (B5): glow sprites are looked up without per-stamp st
     for (const ms of [1234, 4567]) {
         for (const [name, args] of [['drawSegmentedSphere', [cx2, cy2, progressAt(h, ms)]],
             ['drawOrbitBlocks', [cx2, cy2, progressAt(h, ms) * Math.PI * 2]]]) {
-            assert.deepEqual(json(h.capture(() => h.sandbox[name](...args))), json(h.reference(name, ...args)), `${name} after resize`);
+            const reference = h.reference(name, ...args);
+            // T1 (scene-wallpaper-scaling): 720 px short side, so the blocks carry scale(720 / 1080).
+            const expected = name === 'drawOrbitBlocks' ? withOrbitBlockScale(reference, wallpaperOrbitBlockScale(1280, 720)) : reference;
+            assert.deepEqual(json(h.capture(() => h.sandbox[name](...args))), json(expected), `${name} after resize`);
         }
     }
 });

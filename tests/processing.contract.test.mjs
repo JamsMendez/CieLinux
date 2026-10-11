@@ -137,7 +137,8 @@ const referenceSha256 = {
     // Re-pinned for invariant star/streak directions (odd/tasks/processing-invariant-trig.md).
     // Re-pinned after exact arithmetic-reuse contracts (odd/tasks/processing-arithmetic-reuse.md).
     // Re-pinned for the cached wallpaper vignette (odd/tasks/scene-identical-caches.md T1); was 580e69b2847adafd589987451c28755e44810d8069de12194e978698ba3c38ca
-    layers: 'cb30b3f820096bddf25cfe661227d99541c5c4c7f6f6e1620e0f431b15e13fbe',
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was cb30b3f820096bddf25cfe661227d99541c5c4c7f6f6e1620e0f431b15e13fbe
+    layers: '7a39b66038e2c5f0ec9d63480954ea5e7402fbb4829a9348d616efc831d98b4e',
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162
     nebula: 'eac31e99953bd84950cee77603243e6ed2dccea0598f1e68cb3ad59d57f42d25',
 };

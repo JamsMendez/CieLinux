@@ -87,8 +87,10 @@ function drawGoldenHexadecagon(cx, cy, progress, pulse) {
   const pulseStroke = 1 + pulse * HEXADECAGON_PULSE_STROKE_FACTOR;
   const pulseBlur = HEXADECAGON_PULSE_BLUR_BASE + pulse * HEXADECAGON_PULSE_BLUR_RANGE;
   const vertices = hexadecagonVertices(r, pulse);
-  // CielWin fixes port (odd/tasks/shared-scenes.md): the mini stroke is rescaled by 1.2 / MINI_SCENE_ZOOM, as in layers.js.
-  const miniStrokeK = isMiniVariant ? 1.2 / MINI_SCENE_ZOOM : 1;
+  // CielWin fixes port (odd/tasks/shared-scenes.md): the mini stroke is rescaled, as in layers.js; wallpaper scaling
+  // (odd/tasks/scene-wallpaper-scaling.md T3) solves the factor at 288 px for the proportional mini r.
+  const miniStrokeK = isMiniVariant
+    ? MINI_POLYGON_STROKE_PX / (coreRadius(288) * HEXADECAGON_STROKE_WIDTH_FACTOR * 1.3 * MINI_SCENE_ZOOM) : 1;
   const chromaticStrokeWidth = r * HEXADECAGON_STROKE_WIDTH_FACTOR * pulseStroke * miniStrokeK;
   const chromaticOffsetPx = r * HEXADECAGON_CHROMATIC_OFFSET_FACTOR;
   ctx.save();
@@ -276,7 +278,9 @@ function harness({ variant = 'mini', width = 240, height = 240 } = {}) {
 
 const json = value => JSON.parse(JSON.stringify(value));
 const count = (ops, name) => ops.filter(op => op[0] === name).length;
-const centre = h => [h.evaluate('W') * 0.505, h.evaluate('H') * 0.515];
+// render()'s scene centre: the window centre in mini (T3, odd/tasks/scene-wallpaper-scaling.md), 0.505W/0.515H in the wallpaper.
+const centre = h => h.evaluate('isMiniVariant') ? [h.evaluate('W') / 2, h.evaluate('H') / 2]
+    : [h.evaluate('W') * 0.505, h.evaluate('H') * 0.515];
 // pulse is 0 for 1150 ms of every 2000 ms (hexadecagonPulse); 1000 ms is inside a quiet window, 400 ms inside a pulse.
 const QUIET_MS = 1000, PULSE_MS = 400;
 
@@ -525,6 +529,35 @@ test('raphael mini bakes only the glyph-ring sprites; full still bakes every spr
     assert.ok(referenceCanvases > glyphSprites * 1.2, `${referenceCanvases} reference sprite canvases vs ${glyphSprites} glyph sprites`);
 });
 
+// Wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md T2): below a 1080 px short side the wallpaper's 10 px glyph
+// edge margin and 20 px gap shrink with the composition (min(1, glyphRingMiniScale())), so the ring glyphs keep their
+// 1080 px proportions instead of collapsing into dashes; at >= 1080 they stay the absolute px.
+test('raphael wallpaper: glyph margin/gap scale down below a 1080 px short side and the glyphs keep their proportions', () => {
+    const aspect = h => {
+        const blue = h.evaluate('sprites.outlineGlyphs');
+        return blue.reduce((sum, sprite) => sum + sprite.hh / sprite.hw, 0) / blue.length;
+    };
+    const metrics = (width, height) => {
+        const h = harness({ variant: 'full', width, height });
+        h.tick(QUIET_MS);
+        assert.deepEqual(h.errors, []);
+        return { h, margin: h.evaluate('glyphRingEdgeMarginPx()'), gap: h.evaluate('glyphRingGapPx()'),
+            scale: h.evaluate('coreRadius(Math.min(W, H)) / coreRadius(1080)') };
+    };
+    for (const [width, height] of [[1920, 1080], [3440, 1440]]) {
+        const { margin, gap } = metrics(width, height);
+        assert.deepEqual([margin, gap], [10, 20], `${width}x${height} keeps the absolute px`);
+    }
+    const reference = aspect(metrics(1920, 1080).h);
+    for (const [width, height] of [[640, 360], [800, 450]]) {
+        const { h, margin, gap, scale } = metrics(width, height);
+        assert.ok(scale < 1);
+        assert.ok(Math.abs(margin - 10 * scale) < 1e-9 && Math.abs(gap - 20 * scale) < 1e-9, `${width}x${height}: ${margin}/${gap}`);
+        const small = aspect(h);
+        assert.ok(Math.abs(small / reference - 1) < 0.15, `${width}x${height} blue glyph hh/hw ${small} vs ${reference} at 1080`);
+    }
+});
+
 // B5 (wallpaper optimizations): the wallpaper (full variant) uses the O3 changes whose output
 // is the reference one (delimiter layer, cached core gradients); the glyph-ring and hexadecagon bakes,
 // which resample, stay mini-only, so those streams are still the reference ones.
@@ -632,7 +665,8 @@ test('raphael O3 changes are removable marked blocks over the CielWin reference'
     const strip = source => source.replace(/^[ \t]*\/\/ Linux mini optimization begin[^\n]*\n[\s\S]*?^[ \t]*\/\/ Linux mini optimization end\.\n/gm, '');
     // Re-pinned after old-name→CielWin comment rename (text-only); was 2a745ee5c5757d09eb475b30fab349ba53cb79d63321dc234fbdef24537de2fc
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was e6265d4759314ffb58b143b4af56edfb16cd20b0fea3530d172f207eab906c68
-    assert.equal(sha256(strip(read('raphael/js/layers.js'))), 'b79123a36d754a66a7d26c73e9a33cba258d4dd27f873bcc7dd2c7484652b871');
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was b79123a36d754a66a7d26c73e9a33cba258d4dd27f873bcc7dd2c7484652b871
+    assert.equal(sha256(strip(read('raphael/js/layers.js'))), 'ff9dcc4f3930536805f145eea87fc6909c429d973333b4b26ac30ac7984cab97');
     assert.equal(sha256(strip(read('raphael/js/sprites.js'))), 'b97ab8fba52b6255e33909d470ff871eb269c6125d9cdeb9b736049b55af8ee5');
     for (const name of ['layers', 'sprites'])
         assert.match(read(`raphael/js/${name}.js`), /\/\/ Linux mini optimization begin \(O3\)/, name);

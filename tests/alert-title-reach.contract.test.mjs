@@ -16,7 +16,8 @@ const R1_HOOK_BLOCK = /^\/\/ Linux port begin \(R1\)[^\n]*\n[\s\S]*?^\/\/ Linux 
 const PRE_R1 = {
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was 103022454cca637f575d8d8ea4ed4207e3ba3bc50c513ebaa69e30c8d516ae24
     'shared/js/alert-overlay.js': 'dbc6a33158020de1f227bad11ff4257c8d40e010d3cfc04a2ca43a21ea2cfabd',
-    'raphael/js/see-through-hook.js': 'd6f6c34f4af60e7fb5b1566393d5a347b303639796fe87d54fb13961af9f1720',
+    // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was d6f6c34f4af60e7fb5b1566393d5a347b303639796fe87d54fb13961af9f1720
+    'raphael/js/see-through-hook.js': '695b167cfa2a1db132ac8cd90fa763f7a3ddf9c655670033ec0dbccbf7ce927b',
     'processing/js/see-through-hook.js': 'ff0dc530ca117e5cda5849ebb2b0520b7517dd0385fcf27c7c2f30558037bd05',
     'explorer/js/see-through-hook.js': '4ee5d0bfe8a7d148f411842c48eaf25517f12f3270f91a3d298b7c12df9e62f2',
     'idle/js/see-through-hook.js': 'c6a9268440bd2bcee2e657319e3636f9ee88baaad324994d03bdd1782a384d0d',
