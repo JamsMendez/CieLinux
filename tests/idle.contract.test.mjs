@@ -27,7 +27,8 @@ const referenceSha256 = {
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was ab076276fc5d037782f9228699881d19fc8ea7e242ba59dcd494099faa46bb1d
     earth: '5b4815bc9c691d02f62b93a43abde0079f7afd6aa9d5bdd07bdca7fe7ebb483c',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1: 7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70; CielWin reference: 1dde4516d984afabfe84aeca85e17f8496dd15221a91eb7ae8e75ce7c6aae9d5
-    rings: 'cebf294e99feae3defdafa3cba29d6375774ed2d5f1a5803a5d35206843431ae',
+    // Re-pinned for wallpaper constellation detail (odd/tasks/scene-wallpaper-scaling.md); was cebf294e99feae3defdafa3cba29d6375774ed2d5f1a5803a5d35206843431ae
+    rings: 'f7cea7c142ac659f55c86d34ca51c6ba7d96903e7ffc3334a419b0a9888882d2',
     // Re-pinned after old-name→CielWin comment rename (text-only); was 231a4faf26467d05f206301f69b0613f0974ade0c43e680685c911961724f3ae
     main: '15f472543e2d53fab4157ade61bcda125be14306d3d3dc12d2e7ab7288ace698',
 };
