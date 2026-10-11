@@ -49,6 +49,15 @@ sudo pacman -S --needed cmake base-devel qt6-base qt6-declarative qt6-webengine 
 
 ## Build and install
 
+The scenes live in the shared [CielScenes](https://github.com/JamsMendez/CielScenes)
+repository, checked out as the `scenes/` submodule. Clone with submodules, or
+fetch them in an existing checkout:
+
+```sh
+git clone --recurse-submodules git@github.com:JamsMendez/CieLinux.git
+git submodule update --init      # existing checkout
+```
+
 ```sh
 ./install.sh            # build into ./build and install to ~/.local
 ./install.sh --enable   # same, then enable and start the user service
@@ -793,7 +802,7 @@ harnesses against `src/` (they need the same Qt and CMake toolchain as the build
 CieLinux/
 ├── CMakeLists.txt, install.sh, uninstall.sh
 ├── assets/raphael-mini.ico       tray icon, CielWin's file byte for byte (qrc:/raphael-mini.ico)
-├── scenes/                       the four HTML scenes, served from the binary as qrc:/<scene>/...
+├── scenes/                       CielScenes submodule: the four HTML scenes, served from the binary as qrc:/<scene>/...
 │   ├── processing/  explorer/  idle/  raphael/
 │   └── shared/                   alert overlay (js/alert-overlay.js) and its font
 │                                 (Archivo Black, SIL OFL, see fonts/OFL.txt)
