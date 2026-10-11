@@ -28,11 +28,13 @@ const stripW1 = text => text
 const PRE_W1 = {
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was c7e2bbc5c6be17389d27632604d14679b8a8b0ada0f063447ddbd622136a822e
     'explorer/js/earth.js': '4a67423de241f33caec53bb1e72668be58ac8ca11e7850d29f46a835200ecfb3',
-    'explorer/js/rings.js': '5fbbf2e05ce270ae388f41ec83513108963577cdf1ce689cdac925be8588f68f',
+    // Re-pinned for wallpaper constellation detail (odd/tasks/scene-wallpaper-scaling.md); was 5fbbf2e05ce270ae388f41ec83513108963577cdf1ce689cdac925be8588f68f
+    'explorer/js/rings.js': 'a7892e8547610ff34cc29494d2e06a721e9a251e45cc1a4cc26d639f0060cd9e',
     'explorer/js/rising-sparks.js': '2ad6813e392bb5a948a9fa3f30c49364a190fb7cc20979fa25dd685f1ce24201',
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was ee21ce5b3159b04663b36fff784b0cc89613559816ecb425b3f227fb4865fd88
     'idle/js/earth.js': '7a0b05ee2c92cc799565bbad9bbd518eef4d5fccfa7e13ee0c82b65af39b776e',
-    'idle/js/rings.js': '7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70',
+    // Re-pinned for wallpaper constellation detail (odd/tasks/scene-wallpaper-scaling.md); was 7979253e3038ab679417258ab369ef97fe9be315b0188f5949f2da7b64270f70
+    'idle/js/rings.js': '538badb15ba863e1ef7d06d53eeb949bec93e278ac6f9da10bf838b3fd6f3ba6',
 };
 
 // Recording Canvas2D mock: every method call and property set lands in one ordered stream per context.
@@ -181,6 +183,68 @@ test('explorer full frame: vignette and blue layer fill the reference gradients'
     const v = ops.findIndex(op => op[0] === '=fillStyle' && op[1] === vignette);
     assert.deepEqual(ops[v + 1], ['fillRect', 0, 0, W, H]);
 });
+
+// ---- Constellation detail (scene-wallpaper-scaling T5) -----------------------------------------
+// The constellation dots/lines and the hieroglyph strokes are absolute px tunables. Mini scales them with its
+// ring (T2g/T2h); the wallpaper now scales them too below a 1080p screen, by min(1, ring thickness / its
+// thickness at 1920x1080), never under the mini floor. At 1080p and above the tunables stay exact.
+
+// Dot radii in px drawn by drawConstellationRing: arcs recorded inside its scale(boxSize) block.
+function drawnDotRadii(h, box) {
+    let scale = 1; const stack = [], radii = [];
+    const context = new Proxy({}, {
+        get: (target, name) => name === 'save' ? () => stack.push(scale)
+            : name === 'restore' ? () => { scale = stack.length ? stack.pop() : 1; }
+            : name === 'scale' ? sx => { scale *= sx; }
+            : name === 'arc' ? (x, y, r) => { if (Math.abs(scale - box) < 1e-6) radii.push(r * scale); }
+            : () => {},
+        set: () => true });
+    h.sandbox.drawConstellationRing(context, 0, 0, 100, 100 + box, 0);
+    return radii;
+}
+
+// Glyph stroke widths in px drawHieroglyphBand hands to drawHieroglyph.
+function drawnGlyphStrokes(h, band) {
+    const widths = [], original = h.sandbox.drawHieroglyph;
+    h.sandbox.drawHieroglyph = (context, strokes, x, y, size, angle, color, lineWidth) => { widths.push(lineWidth); };
+    try { h.sandbox.drawHieroglyphBand(new Proxy({}, { get: () => () => {}, set: () => true }), 0, 0, 100, 100 + band, 0); }
+    finally { h.sandbox.drawHieroglyph = original; }
+    return widths;
+}
+
+for (const scene of ['idle', 'explorer']) {
+    test(`${scene} wallpaper: constellation dots, lines and glyph strokes scale below 1080p, exact at and above`, () => {
+        for (const [width, height] of [[800, 450], [640, 360], [1920, 1080], [3440, 1440]]) {
+            const h = harness(scene, { width, height });
+            const value = name => h.evaluate(name);
+            const basis = value('activeSceneBasis()');
+            const ratio = Math.min(1, basis / value('sceneBasis(1920, 1080)'));
+            const floor = value('MINI_CONSTELLATION_MIN_PX');
+            const expect = px => ratio === 1 ? px : Math.max(floor, px * ratio);
+            const box = basis * (value('CONSTELLATION_RING_OUTER_RADIUS_FRACTION') - value('CONSTELLATION_RING_INNER_RADIUS_FRACTION'));
+            const band = basis * (value('HIEROGLYPH_BAND_OUTER_RADIUS_FRACTION') - value('HIEROGLYPH_BAND_INNER_RADIUS_FRACTION'));
+            const [dot, line, stroke] = ['CONSTELLATION_DOT_RADIUS', 'CONSTELLATION_LINE_WIDTH', 'HIEROGLYPH_STROKE_PX'].map(value);
+            const at = `${width}x${height}`;
+            if (height < 1080) assert.ok(ratio < 0.8, `${at}: expected a smaller ring than 1080p, ratio ${ratio}`);
+
+            const sizes = h.sandbox.constellationDetailSizes(box);
+            const dots = drawnDotRadii(h, box), strokes = drawnGlyphStrokes(h, band);
+            assert.ok(dots.length > 0 && strokes.length > 0, `${at}: dots and glyphs drawn`);
+            if (ratio === 1) {
+                assert.equal(sizes.dotRadius, dot, `${at}: dot radius`);
+                assert.equal(sizes.lineWidth, line, `${at}: line width`);
+                for (const r of dots) assert.ok(Math.abs(r - dot) < 1e-9, `${at}: drawn dot ${r}`);
+                for (const w of strokes) assert.equal(w, stroke, `${at}: glyph stroke`);
+            } else {
+                assert.ok(Math.abs(sizes.dotRadius - expect(dot)) < 1e-9, `${at}: dot radius ${sizes.dotRadius}, expected ${expect(dot)}`);
+                assert.ok(Math.abs(sizes.lineWidth - expect(line)) < 1e-9, `${at}: line width ${sizes.lineWidth}, expected ${expect(line)}`);
+                assert.ok(sizes.dotRadius < dot && sizes.lineWidth < line, `${at}: smaller than the 1080p tunables`);
+                for (const r of dots) assert.ok(Math.abs(r - expect(dot)) < 1e-9, `${at}: drawn dot ${r}, expected ${expect(dot)}`);
+                for (const w of strokes) assert.ok(Math.abs(w - expect(stroke)) < 1e-9, `${at}: glyph stroke ${w}, expected ${expect(stroke)}`);
+            }
+        }
+    });
+}
 
 // ---- Explorer rising sparks ---------------------------------------------------------------------
 

@@ -27,7 +27,8 @@ const referenceSha256 = {
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was 664b7a66e951624ab3ad8f228a97b3f42914387498c6810439af0471ae0c265b
     earth: '4a40ed95962d5a2a28959bcee2c14962be175c6d96447728d159ccee86524b55',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1 + O1b: 5fbbf2e05ce270ae388f41ec83513108963577cdf1ce689cdac925be8588f68f; CielWin reference: 085d434f797d114b3084988494e37e9aaf9939cf1100dd0a3f19ecd1f9e6962b
-    rings: 'e17b469e45a21df9cca259b1b8b0a48d4104e75ab92166fb089dbb42e702ad9b',
+    // Re-pinned for wallpaper constellation detail (odd/tasks/scene-wallpaper-scaling.md); was e17b469e45a21df9cca259b1b8b0a48d4104e75ab92166fb089dbb42e702ad9b
+    rings: 'dd4d45929f85dfdd77a559de0c0800ada129f171e763a9e2f63c58d33864340a',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1 + O1b + O1c P1 + O1d: 2ad6813e392bb5a948a9fa3f30c49364a190fb7cc20979fa25dd685f1ce24201; O1c P1: b8305ad6ed0d8b3a1d6697a4b458f6642e2049d8f74cb21d57def777ee1aad71; O1b: af1b6a3ebbb98ef7006839ab03f9967c6ae6191d98a113bfe0fde54a31930211; CielWin reference: 8103d08efe541a6853bd63f35961137a18f009273821ed40d995667c44a9d39a
     'rising-sparks': '8f78bfa357a698354107185a9a76f468c7b01a309aedf3cb9b537486c9f202ad',
     // Re-pinned after old-name→CielWin comment rename (text-only); was 2480a1ae00f32a88b8c1887b638532dcce28acff428d07ee5ba720f1ceb88e69
