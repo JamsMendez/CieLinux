@@ -208,7 +208,36 @@ function drawCentralCore(cx, cy, phase, pulse) {
   paintRadialGlowLayer(cx, cy, r * CENTRAL_CORE_HOT_RADIUS_FACTOR, CENTRAL_CORE_HOT_STOPS, CENTRAL_CORE_DISC_COLOR, 'lighter',
     { color: ` + '`rgba(${CENTRAL_CORE_DISC_GLOW_COLOR},0.85)`' + String.raw`, blur: 20 * flare });
 }
-return { drawGlyphRingDelimiters, drawGlyphRings, drawOutlineGlyphRing, drawGoldenHexadecagon, drawCentralCore };
+function fillCircle(x, y, radius) {
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, TAU);
+  ctx.fill();
+}
+function drawStars(cx, cy, p, phase) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const s of stars) {
+    const z = fract(s.z + p * s.speed * 0.24 * BACKGROUND_PARTICLE_SPEED_MULTIPLIER);
+    const d = 0.018 + Math.pow(z, 1.82) * 1.18;
+    const x = cx + Math.cos(s.a) * W * 0.77 * d * s.lane;
+    const y = cy + Math.sin(s.a) * H * 0.91 * d;
+    const tw = 0.32 + 0.68 * Math.sin(phase * 1.5 + s.twinkle) ** 2;
+    const alpha = (0.08 + z * 0.78) * tw;
+    const r = s.r * (0.42 + z * 1.38) * BACKGROUND_PARTICLE_SIZE_MULTIPLIER;
+    const color = s.warm ? '255,246,192' : '238,250,255';
+    ctx.fillStyle = ` + '`rgba(${color},${alpha})`' + String.raw`;
+    fillCircle(x, y, r);
+    if (s.glint && z > 0.52) {
+      const offset = (0.8 + z * 1.5) * BACKGROUND_PARTICLE_SIZE_MULTIPLIER;
+      ctx.fillStyle = ` + '`rgba(58,220,255,${alpha * 0.48})`' + String.raw`;
+      fillCircle(x - offset, y, r);
+      ctx.fillStyle = ` + '`rgba(255,86,158,${alpha * 0.42})`' + String.raw`;
+      fillCircle(x + offset, y, r);
+    }
+  }
+  ctx.restore();
+}
+return { drawGlyphRingDelimiters, drawGlyphRings, drawOutlineGlyphRing, drawGoldenHexadecagon, drawCentralCore, drawStars };
 }
 `;
 
@@ -365,9 +394,14 @@ test('raphael mini: glyph-ring delimiters bake once into a device-aligned layer 
     const draw = first.ops.findIndex(op => op[0] === 'drawImage' && op[1] === layers[0]);
     assert.deepEqual(first.ops[draw], ['drawImage', layers[0], -ex, -ey]);
     assert.deepEqual(first.ops.slice(draw - 3, draw), [['save'], ['setTransform', 1, 0, 0, 1, 0, 0], ['=globalCompositeOperation', 'screen']]);
-    const paintsBefore = first.ops.slice(first.ops.findIndex(op => op[0] === 'clearRect') + 1, draw)
-        .filter(op => ['fill', 'stroke', 'drawImage', 'fillRect'].includes(op[0]));
-    assert.deepEqual(paintsBefore, [], 'nothing is painted on the scene canvas before the delimiters');
+    // Only the stars (the wallpaper's reference stream) paint on the scene canvas before the delimiters.
+    const paints = ops => ops.filter(op => ['fill', 'stroke', 'drawImage', 'fillRect'].includes(op[0]));
+    const paintsBefore = paints(first.ops.slice(first.ops.findIndex(op => op[0] === 'clearRect') + 1, draw));
+    const progress = h.sandbox.animationProgress(QUIET_MS);
+    const stars = h.recorder();
+    h.sandbox.referenceLayers(stars.proxy).drawStars(cx, cy, progress, progress * Math.PI * 2);
+    assert.ok(paints(stars.ops).length > 0, 'the reference stars paint');
+    assert.deepEqual(json(paintsBefore), json(paints(stars.ops)), 'only the stars are painted before the delimiters');
     for (const ms of [QUIET_MS + 33, QUIET_MS + 66, PULSE_MS + 2000]) {
         const later = h.tick(ms);
         assert.equal(later.newContexts, 0, `no layer rebuilt at ${ms}`);
