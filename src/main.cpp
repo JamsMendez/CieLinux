@@ -485,7 +485,7 @@ int main(int argc, char **argv) {
         view.setColor(wallpaper ? QColor(Qt::black) : QColor(Qt::transparent));
         view.setResizeMode(QQuickView::SizeRootObjectToView);
         if (wallpaper) view.resize(screen->size());
-        else view.resize(240, 240);
+        else view.resize(MiniPlacement::side, MiniPlacement::side);
         auto *layer = LayerShellQt::Window::get(&view);
         if (!layer) { qCritical("LayerShellQt unavailable"); return 2; }
         layer->setScope(QStringLiteral("cielinux"));
@@ -503,7 +503,7 @@ int main(int argc, char **argv) {
         } else {
             // Top (not Overlay): Hyprland draws fullscreen windows above it.
             layer->setLayer(LayerShellQt::Window::LayerTop);
-            layer->setDesiredSize(QSize(240, 240));
+            layer->setDesiredSize(QSize(MiniPlacement::side, MiniPlacement::side));
             // Zone 0: the compositor keeps it clear of other surfaces' exclusive zones (bars).
             layer->setExclusiveZone(0);
             // A6: anchors + margins for stored.settings.miniPosition, set (and later glided)

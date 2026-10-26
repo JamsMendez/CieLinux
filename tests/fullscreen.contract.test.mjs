@@ -843,7 +843,7 @@ test('mini glide: a slow j/monitors answer never blocks the glide; positions exa
         // j/monitors is still held back: the glide starts at once with the whole output.
         let move = await glide('right-center', at);
         assert.ok(move.us < 5000, `glideTo returned in ${move.us} us without waiting for Hyprland`);
-        assert.equal(move.landed, 'LANDED 1664,420 REST 1627,420', 'fallback frame = whole output, rest still exact');
+        assert.equal(move.landed, 'LANDED 1584,380 REST 1547,380', 'fallback frame = whole output, rest still exact');
         watch.send('reserved');
         at = await watch.waitFor('RESERVED', move.at, 2000, l => l.startsWith('RESERVED '));
         assert.equal(watch.lines[at], 'RESERVED none', 'the answer is still pending');
@@ -853,7 +853,7 @@ test('mini glide: a slow j/monitors answer never blocks the glide; positions exa
         await watch.waitFor('GAP', watch.lines.findIndex(l => l.startsWith('GAP ')) + 1, 2000, l => l.startsWith('GAP '));
         const gaps = watch.lines.filter(l => l.startsWith('GAP ')).map(l => Number(l.split(' ')[1]));
         assert.ok(gaps.length === 2 && gaps.every(g => g < 150), `event loop stayed live: ${gaps}`);
-        const expected = { 'bottom-right': '1627,824', 'bottom-center': '821,824', 'top-right': '1627,16', 'right-center': '1627,420' };
+        const expected = { 'bottom-right': '1547,744', 'bottom-center': '781,744', 'top-right': '1547,16', 'right-center': '1547,380' };
         for (const [position, xy] of Object.entries(expected)) {
             move = await glide(position, at);
             at = move.at;
@@ -958,15 +958,15 @@ test('mini dodge: a near cursor glides the mini aside, a far one brings it back'
         assert.ok(!watch.lines.some(l => l.startsWith('MINI ')), 'a far cursor moves nothing');
         at = (await path(at)).at;
         // Near the top-right mini from the right: aside to the left.
-        state.cursor = { x: 1920 + 1840, y: 136 };
+        state.cursor = { x: 1920 + 1840, y: 176 };
         let line = await watch.waitFor('MINI dodge direction=left', at, 2000);
         let landed = await watch.waitFor('LANDED', line, 2000, l => l.startsWith('LANDED '));
-        assert.equal(watch.lines[landed], 'LANDED 1355,16 REST 1355,16');
+        assert.equal(watch.lines[landed], 'LANDED 1195,16 REST 1195,16');
         let p = await path(landed);
-        let x = 1627;
-        for (const [px, py] of p.points) { assert.ok(py === 16 && px <= x && px >= 1355, JSON.stringify(p.points)); x = px; }
+        let x = 1547;
+        for (const [px, py] of p.points) { assert.ok(py === 16 && px <= x && px >= 1195, JSON.stringify(p.points)); x = px; }
         // Lingering over its spot keeps it aside.
-        state.cursor = { x: 1920 + 1700, y: 136 };
+        state.cursor = { x: 1920 + 1700, y: 176 };
         await sleep(700);
         assert.equal(watch.count('MINI dodge return'), 0);
         state.cursor = { x: 1920 + 100, y: 900 };
@@ -974,10 +974,10 @@ test('mini dodge: a near cursor glides the mini aside, a far one brings it back'
         line = await watch.waitFor('MINI dodge return', p.at, 3000);
         assert.ok(Date.now() - far >= 380, `returned ${Date.now() - far} ms after the cursor left`);
         landed = await watch.waitFor('LANDED', line, 2000, l => l.startsWith('LANDED '));
-        assert.equal(watch.lines[landed], 'LANDED 1627,16 REST 1627,16');
+        assert.equal(watch.lines[landed], 'LANDED 1547,16 REST 1547,16');
         p = await path(landed);
-        x = 1355;
-        for (const [px, py] of p.points) { assert.ok(py === 16 && px >= x && px <= 1627, JSON.stringify(p.points)); x = px; }
+        x = 1195;
+        for (const [px, py] of p.points) { assert.ok(py === 16 && px >= x && px <= 1547, JSON.stringify(p.points)); x = px; }
         assert.equal(watch.count('MINI dodge direction=left'), 1, 'one line per move, never per poll');
         // A slow Hyprland: the poll skips its ticks while a request is still due.
         state.delayCursor = 300;

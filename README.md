@@ -7,7 +7,7 @@ switches between them live.
 
 | Mode | `wallpaper-mode` | What you see |
 | --- | --- | --- |
-| Mini (default) | `scene-mini` | A 240 px always-on-top overlay at one of eight positions, see-through by brightness. |
+| Mini (default) | `scene-mini` | A 320 px always-on-top overlay at one of eight positions, see-through by brightness. |
 | Wallpaper | `scene` | The full-size scene as the desktop wallpaper on the bottom layer, paused under fullscreen windows. |
 
 Choose **Frame rate ▸ 30 FPS or 60 FPS** in the tray. One persisted global cap
@@ -151,7 +151,7 @@ tray-host restarts. Re-selecting the current rate does nothing.
 
 ## Mini mode
 
-The mini window is 240 px square, drawn at the global frame-rate cap on the layer-shell top layer. It is
+The mini window is 320 px square, drawn at the global frame-rate cap on the layer-shell top layer. It is
 see-through by brightness (a luminance key makes black transparent), so only the scene
 shows over your desktop. It is never covered by other windows and never pauses.
 
