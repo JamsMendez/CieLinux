@@ -80,17 +80,17 @@ int main(int argc, char **argv) {
     CHECK(s.serialize().contains("\nmini-position = bottom-center\n"));
     CHECK(Settings::parse(s.serialize()) == s);
 
-    // Geometry in the usable area (output minus other surfaces' exclusive zones): 240 px square, 16 px inset.
-    CHECK(side == 240 && inset == 16 && glideMs == 220);
+    // Geometry in the usable area (output minus other surfaces' exclusive zones): 320 px square, 16 px inset.
+    CHECK(side == 320 && inset == 16 && glideMs == 220);
     const QSize usable(1883, 1080); // 1920x1080 with a 37 px bar on the right
-    CHECK(rect("top-left", usable) == QRect(16, 16, 240, 240));
-    CHECK(rect("top-center", usable) == QRect(821, 16, 240, 240));
-    CHECK(rect("top-right", usable) == QRect(1627, 16, 240, 240));
-    CHECK(rect("right-center", usable) == QRect(1627, 420, 240, 240));
-    CHECK(rect("bottom-right", usable) == QRect(1627, 824, 240, 240));
-    CHECK(rect("bottom-center", usable) == QRect(821, 824, 240, 240));
-    CHECK(rect("bottom-left", usable) == QRect(16, 824, 240, 240));
-    CHECK(rect("left-center", usable) == QRect(16, 420, 240, 240));
+    CHECK(rect("top-left", usable) == QRect(16, 16, 320, 320));
+    CHECK(rect("top-center", usable) == QRect(781, 16, 320, 320));
+    CHECK(rect("top-right", usable) == QRect(1547, 16, 320, 320));
+    CHECK(rect("right-center", usable) == QRect(1547, 380, 320, 320));
+    CHECK(rect("bottom-right", usable) == QRect(1547, 744, 320, 320));
+    CHECK(rect("bottom-center", usable) == QRect(781, 744, 320, 320));
+    CHECK(rect("bottom-left", usable) == QRect(16, 744, 320, 320));
+    CHECK(rect("left-center", usable) == QRect(16, 380, 320, 320));
     CHECK(rect("bogus", usable) == rect("top-right", usable));
 
     // Resting placement: anchors to the position's edges, inset on those edges only, so the
@@ -104,10 +104,10 @@ int main(int argc, char **argv) {
 
     // Ease-out cubic and glide frames rounded away from zero, exact at both ends.
     CHECK(ease(0) == 0 && ease(1) == 1 && qAbs(ease(0.5) - 0.875) < 1e-12);
-    const QRect a(0, 0, 240, 240), b(100, 50, 240, 240);
+    const QRect a(0, 0, 320, 320), b(100, 50, 320, 320);
     CHECK(glideAt(a, b, -5, 220) == a);
     CHECK(glideAt(a, b, 0, 220) == a);
-    CHECK(glideAt(a, b, 110, 220) == QRect(88, 44, 240, 240)); // 87.5 -> 88, 43.75 -> 44
+    CHECK(glideAt(a, b, 110, 220) == QRect(88, 44, 320, 320)); // 87.5 -> 88, 43.75 -> 44
     CHECK(glideAt(a, b, 220, 220) == b && glideAt(a, b, 999, 220) == b);
 
     // The glider: instant attach, 220 ms glide through margins, never a jump.
@@ -121,18 +121,18 @@ int main(int argc, char **argv) {
     glider.attach(sink, "top-right");
     CHECK(glider.attached() && !glider.gliding() && glider.position() == "top-right");
     CHECK(wl.state == resting("top-right"));
-    CHECK(wl.seen.last() == QPoint(1627, 16));
+    CHECK(wl.seen.last() == QPoint(1547, 16));
 
     wl.seen.clear();
     CHECK(glider.glideTo("right-center"));
     CHECK(glider.gliding() && glider.position() == "right-center" && usableQueries == 1);
     CHECK(wl.state.anchors == (Top | Left));
-    for (const QPoint &p : wl.seen) CHECK(p == QPoint(1627, 16)); // switching frames never moves it
+    for (const QPoint &p : wl.seen) CHECK(p == QPoint(1547, 16)); // switching frames never moves it
     int lastDistance = 1 << 30;
     for (now = 1000; now <= 1220; now += 16) {
         glider.tick();
         const QPoint p = wl.seen.last();
-        const int distance = qAbs(p.x() - 1627) + qAbs(p.y() - 420);
+        const int distance = qAbs(p.x() - 1547) + qAbs(p.y() - 380);
         CHECK(distance <= lastDistance);
         lastDistance = distance;
     }
@@ -140,8 +140,8 @@ int main(int argc, char **argv) {
     glider.tick();
     CHECK(!glider.gliding());
     CHECK(wl.state == resting("right-center"));
-    for (const QPoint &p : wl.seen) CHECK(p.x() == 1627 && p.y() >= 16 && p.y() <= 420);
-    CHECK(wl.seen.last() == QPoint(1627, 420));
+    for (const QPoint &p : wl.seen) CHECK(p.x() == 1547 && p.y() >= 16 && p.y() <= 380);
+    CHECK(wl.seen.last() == QPoint(1547, 380));
 
     // Retarget mid-glide: starts from where it is, never jumps back or ahead.
     wl.seen.clear();
@@ -150,7 +150,7 @@ int main(int argc, char **argv) {
     now = 2100;
     glider.tick();
     const QPoint mid = wl.seen.last();
-    CHECK(mid.x() < 1627 && mid.x() > 821 && mid.y() > 420 && mid.y() < 824);
+    CHECK(mid.x() < 1547 && mid.x() > 781 && mid.y() > 380 && mid.y() < 744);
     wl.seen.clear();
     CHECK(glider.glideTo("top-left"));
     CHECK(wl.seen.isEmpty() || wl.seen.last() == mid);
@@ -170,7 +170,7 @@ int main(int argc, char **argv) {
         CHECK(glider.glideTo(target));
         for (int t = 0; t <= 240; t += 8) { now += 8; glider.tick(); }
         CHECK(!glider.gliding() && wl.state == resting(target));
-        for (const QPoint &p : wl.seen) CHECK(box.contains(QRect(p, QSize(240, 240))));
+        for (const QPoint &p : wl.seen) CHECK(box.contains(QRect(p, QSize(side, side))));
         position = target;
     }
 
@@ -211,18 +211,18 @@ int main(int argc, char **argv) {
     {
         using namespace MiniDodge;
         CHECK(approach == 24 && gap == 8 && returnMs == 400 && pollMs == 100);
-        CHECK(zone(QRect(16, 16, 240, 240)) == QRect(-8, -8, 288, 288));
+        CHECK(zone(QRect(16, 16, 320, 320)) == QRect(-8, -8, 368, 368));
         CHECK(name(Direction::Left) == "left" && name(Direction::Right) == "right"
               && name(Direction::Up) == "up" && name(Direction::Down) == "down");
         struct Case { const char *position; QPoint cursor; Direction direction; QRect rect; };
         const Case cases[] = {
-            {"top-right", {1870, 136}, Direction::Left, {1355, 16, 240, 240}},   // cursor right: left
-            {"left-center", {2, 540}, Direction::Right, {288, 420, 240, 240}},   // cursor left: right
-            {"top-left", {136, 0}, Direction::Down, {16, 288, 240, 240}},        // cursor above: down
-            {"bottom-left", {136, 1075}, Direction::Up, {16, 552, 240, 240}},    // cursor below: up
-            {"top-right", {1610, 136}, Direction::Down, {1627, 288, 240, 240}},  // right does not fit
-            {"right-center", {1610, 560}, Direction::Up, {1627, 148, 240, 240}}, // cursor lower: up first
-            {"right-center", {1610, 520}, Direction::Down, {1627, 692, 240, 240}},
+            {"top-right", {1870, 176}, Direction::Left, {1195, 16, 320, 320}},   // cursor right: left
+            {"left-center", {2, 540}, Direction::Right, {368, 380, 320, 320}},   // cursor left: right
+            {"top-left", {176, 0}, Direction::Down, {16, 368, 320, 320}},        // cursor above: down
+            {"bottom-left", {176, 1075}, Direction::Up, {16, 392, 320, 320}},    // cursor below: up
+            {"top-right", {1530, 176}, Direction::Down, {1547, 368, 320, 320}},  // right does not fit
+            {"right-center", {1530, 560}, Direction::Up, {1547, 28, 320, 320}},  // cursor lower: up first
+            {"right-center", {1530, 520}, Direction::Down, {1547, 732, 320, 320}},
         };
         for (const Case &k : cases) {
             const QRect home = rect(k.position, usable);
@@ -232,13 +232,13 @@ int main(int argc, char **argv) {
             CHECK(QRect(16, 16, usable.width() - 32, usable.height() - 32).contains(c->rect));
         }
         // A vertical dodge that does not fit takes a side (a low usable area).
-        const QSize low(1883, 300);
+        const QSize low(1883, 400);
         const std::optional<Choice> side = choose(rect("top-center", low), QPoint(941, 0), low);
-        CHECK(side && side->direction == Direction::Left && side->rect == QRect(549, 16, 240, 240));
+        CHECK(side && side->direction == Direction::Left && side->rect == QRect(429, 16, 320, 320));
         // No side fits: stays home.
-        CHECK(!choose(QRect(16, 16, 240, 240), QPoint(250, 136), QSize(300, 300)));
+        CHECK(!choose(QRect(16, 16, 320, 320), QPoint(330, 176), QSize(400, 400)));
         // A side whose rect would sit by the cursor is no dodge either.
-        CHECK(!choose(rect("top-right", usable), QPoint(1610, 270), usable));
+        CHECK(!choose(rect("top-right", usable), QPoint(1530, 350), usable));
     }
 
     // Rect glides (the dodge): the saved position stays, the frame rests on Top|Left margins, and
@@ -247,27 +247,27 @@ int main(int argc, char **argv) {
         qint64 t = 50000;
         Compositor wd{usable};
         MiniGlider g([&] { return t; }, [&] { return usable; });
-        CHECK(!g.glideToRect(QRect(1355, 16, 240, 240)));
+        CHECK(!g.glideToRect(QRect(1195, 16, 320, 320)));
         g.attach({[&](const QMargins &m) { wd.state.margins = m; wd.record(); },
                   [&](unsigned anchors) { wd.state.anchors = anchors; wd.record(); }}, "top-right");
         CHECK(!g.aside());
-        const QRect aside(1355, 16, 240, 240);
+        const QRect aside(1195, 16, 320, 320);
         wd.seen.clear();
         CHECK(g.glideToRect(aside) && g.gliding() && g.aside() && g.position() == "top-right");
         for (int i = 0; i < 16; ++i) { t += 16; g.tick(); }
         CHECK(!g.gliding() && g.aside() && g.position() == "top-right");
         CHECK(wd.state == gliding(aside) && wd.seen.last() == aside.topLeft());
-        int x = 1627;
-        for (const QPoint &p : wd.seen) { CHECK(p.y() == 16 && p.x() <= x && p.x() >= 1355); x = p.x(); }
+        int x = 1547;
+        for (const QPoint &p : wd.seen) { CHECK(p.y() == 16 && p.x() <= x && p.x() >= 1195); x = p.x(); }
         int sent = wd.seen.size();
         CHECK(g.glideToRect(aside) && !g.gliding() && wd.seen.size() == sent);
         // Back to the saved position: a glide too, resting on its anchors at the end.
         wd.seen.clear();
         CHECK(g.glideTo(g.position()) && g.gliding() && !g.aside());
         for (int i = 0; i < 16; ++i) { t += 16; g.tick(); }
-        CHECK(!g.gliding() && wd.state == resting("top-right") && wd.seen.last() == QPoint(1627, 16));
-        x = 1355;
-        for (const QPoint &p : wd.seen) { CHECK(p.y() == 16 && p.x() >= x && p.x() <= 1627); x = p.x(); }
+        CHECK(!g.gliding() && wd.state == resting("top-right") && wd.seen.last() == QPoint(1547, 16));
+        x = 1195;
+        for (const QPoint &p : wd.seen) { CHECK(p.y() == 16 && p.x() >= x && p.x() <= 1547); x = p.x(); }
         // Home and resting: nothing to do.
         sent = wd.seen.size();
         CHECK(g.glideTo("top-right") && wd.seen.size() == sent);
@@ -275,15 +275,15 @@ int main(int argc, char **argv) {
         CHECK(g.glideToRect(aside));
         t += 100; g.tick();
         const QPoint mid = wd.seen.last();
-        CHECK(mid.x() < 1627 && mid.x() > 1355);
+        CHECK(mid.x() < 1547 && mid.x() > 1195);
         wd.seen.clear();
         CHECK(g.glideTo("bottom-right") && !g.aside());
         CHECK(wd.seen.isEmpty() || wd.seen.last() == mid);
         for (int i = 0; i < 16; ++i) { t += 16; g.tick(); }
         CHECK(wd.state == resting("bottom-right") && g.position() == "bottom-right");
-        for (const QPoint &p : wd.seen) CHECK(QRect(mid, QPoint(1627, 824)).contains(p));
+        for (const QPoint &p : wd.seen) CHECK(QRect(mid, QPoint(1547, 744)).contains(p));
         // A rebuild forgets the dodge: the new surface rests at the position.
-        CHECK(g.glideToRect(QRect(1355, 824, 240, 240)));
+        CHECK(g.glideToRect(QRect(1195, 744, 320, 320)));
         g.detach();
         CHECK(!g.aside() && !g.gliding());
         Compositor again{usable};
@@ -316,18 +316,18 @@ int main(int argc, char **argv) {
         MiniDodger d(g, [&] { return t; }, [&] { return usable; },
                      [](MiniDodger::Answer) { return false; }, [] { return true; },
                      [&](const QString &line) { trace << line; });
-        for (const QPoint p : {QPoint(1627, 16), QPoint(1866, 16), QPoint(1627, 255),
-                               QPoint(1866, 255), QPoint(1870, 136), QPoint(1610, 136),
-                               QPoint(1863, 136), QPoint(1631, 136)}) {
+        for (const QPoint p : {QPoint(1547, 16), QPoint(1866, 16), QPoint(1547, 335),
+                               QPoint(1866, 335), QPoint(1870, 176), QPoint(1530, 176),
+                               QPoint(1861, 176), QPoint(1553, 176)}) {
             d.update(p);
             CHECK(!d.dodged() && !g.aside() && trace.isEmpty());
         }
-        d.update(QPoint(1862, 136)); // just inside: 115 px from the true canvas centre
+        d.update(QPoint(1860, 176)); // just inside: 153 px from the true canvas centre
         CHECK(d.dodged() && trace == QStringList{"dodge direction=left"});
         // Mid-dodge, a destination-only hit must not retrigger; a visible-frame hit must.
         t += 20; g.tick();
         const QRect moving(wm.seen.last(), QSize(side, side));
-        d.update(QPoint(1400, 136)); // inside destination, outside current frame
+        d.update(QPoint(1400, 176)); // inside destination, outside current frame
         CHECK(trace.size() == 1);
         d.update(moving.topLeft() + QPoint(30, 120));
         CHECK(trace.size() == 2 && trace.last() == "dodge direction=down");
@@ -336,20 +336,20 @@ int main(int argc, char **argv) {
         d.update(wm.seen.last());
         CHECK(trace.size() == 2);
         // A transparent home corner no longer holds the window away.
-        d.update(QPoint(1627, 16)); t += 399; d.update(QPoint(1627, 16));
+        d.update(QPoint(1547, 16)); t += 399; d.update(QPoint(1547, 16));
         CHECK(d.dodged());
-        t += 1; d.update(QPoint(1627, 16));
+        t += 1; d.update(QPoint(1547, 16));
         CHECK(!d.dodged());
         t += 220; g.tick();
         // Position glide: neither source nor target is the currently visible frame.
         CHECK(g.glideTo("bottom-left"));
         t += 40; g.tick();
         const QRect visible(wm.seen.last(), QSize(side, side));
-        d.update(QPoint(136, 944));
+        d.update(QPoint(176, 904));
         CHECK(!d.dodged());
-        d.update(QPoint(1747, 136));
+        d.update(QPoint(1707, 176));
         CHECK(!d.dodged());
-        d.update(visible.topLeft() + QPoint(120, 120));
+        d.update(visible.topLeft() + QPoint(160, 160));
         CHECK(d.dodged() && g.position() == "bottom-left");
         d.stop();
         g.detach();
@@ -387,12 +387,12 @@ int main(int argc, char **argv) {
         // Approach from the right: glides left; the position (and so the setting) stays.
         d.poll();
         CHECK(asks == 2);
-        answer(QPoint(1840, 136));
+        answer(QPoint(1840, 176));
         CHECK(d.dodged() && g.aside() && g.position() == "top-right" && trace == QStringList{"dodge direction=left"});
         land();
-        CHECK(wm.state == gliding(QRect(1355, 16, 240, 240)));
+        CHECK(wm.state == gliding(QRect(1195, 16, 320, 320)));
         // Lingering over the home spot keeps it aside and logs nothing more.
-        d.update(QPoint(1700, 136)); t += 1000; d.update(QPoint(1700, 136));
+        d.update(QPoint(1700, 176)); t += 1000; d.update(QPoint(1700, 176));
         CHECK(d.dodged() && trace.size() == 1);
         // Away for 400 ms: back home.
         d.update(QPoint(800, 700)); t += 399; d.update(QPoint(800, 700));
@@ -402,20 +402,20 @@ int main(int argc, char **argv) {
         land();
         CHECK(wm.state == resting("top-right"));
         // Coming near again before 400 ms restarts the wait.
-        d.update(QPoint(1840, 136)); land();
-        d.update(QPoint(800, 700)); t += 300; d.update(QPoint(1700, 100));
+        d.update(QPoint(1840, 176)); land();
+        d.update(QPoint(800, 700)); t += 300; d.update(QPoint(1700, 140));
         t += 300; d.update(QPoint(800, 700)); t += 300; d.update(QPoint(800, 700));
         CHECK(d.dodged());
         t += 100; d.update(QPoint(800, 700));
         CHECK(!d.dodged());
         land();
         // Following the window to its new spot: it takes another side (down), one line per move.
-        d.update(QPoint(1840, 136)); land();
+        d.update(QPoint(1840, 176)); land();
         trace.clear();
-        d.update(QPoint(1400, 136));
+        d.update(QPoint(1400, 176));
         CHECK(d.dodged() && trace == QStringList{"dodge direction=down"});
         land();
-        CHECK(wm.state == gliding(QRect(1627, 288, 240, 240)));
+        CHECK(wm.state == gliding(QRect(1547, 368, 320, 320)));
         // No cursor (Hyprland gone, an unreadable answer) reads as away: home after 400 ms.
         trace.clear();
         d.update(std::nullopt); t += 400; d.update(std::nullopt);
@@ -430,7 +430,7 @@ int main(int argc, char **argv) {
         d.poll();
         CHECK(asks == 3);
         // A cycle-position move cancels the dodge and glides itself: no return line.
-        answer(QPoint(1840, 136));
+        answer(QPoint(1840, 176));
         CHECK(d.dodged());
         trace.clear();
         d.cancel();

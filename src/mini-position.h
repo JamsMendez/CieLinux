@@ -27,7 +27,7 @@ QString previous(const QString &name);
 // keeps it clear of other surfaces' exclusive zones (Waybar). Geometry here is in
 // the usable area: the output minus those zones, origin at its top-left corner.
 namespace MiniPlacement {
-constexpr int side = 240;     // logical px, the mini's existing size
+constexpr int side = 320;     // logical px, the mini's size
 constexpr int inset = 16;     // logical px from the anchored edges (CielWin sits flush)
 constexpr int glideMs = 220;  // CielWin MiniSceneWindowController.GlideDuration
 

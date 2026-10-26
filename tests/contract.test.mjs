@@ -21,8 +21,8 @@ test('native safety is configured before mapping', () => {
     assert.match(cpp, /zwlr_layer_shell_v1/);
     assert.match(cpp, /screenRemoved/);
     for (const marker of ['WindowDoesNotAcceptFocus', 'setLayer(LayerShellQt::Window::LayerTop)',
-        'miniGlider.attach(', 'setDesiredSize(QSize(240, 240))', // A6: anchors/margins via MiniGlider
-        'view.resize(240, 240)', 'qputenv("QT_WAYLAND_SHELL_INTEGRATION", "layer-shell")']) {
+        'miniGlider.attach(', 'setDesiredSize(QSize(MiniPlacement::side, MiniPlacement::side))', // A6: anchors/margins via MiniGlider
+        'view.resize(MiniPlacement::side, MiniPlacement::side)', 'qputenv("QT_WAYLAND_SHELL_INTEGRATION", "layer-shell")']) {
         assert.ok(cpp.includes(marker), marker);
     }
 });

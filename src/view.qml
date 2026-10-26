@@ -18,8 +18,8 @@ Item {
     readonly property bool ready: sceneRoot.scenePolicy.ready
     // Host-owned occlusion disc {x, y, radius}; radius 0 draws none.
     readonly property var sceneDisc: discFor(sceneRoot.sceneName, sceneRoot.width, sceneRoot.height)
-    width: 240
-    height: 240
+    width: 320
+    height: 320
     // Mirrors each scene's own mini geometry (see README "Host occlusion disc (D1)").
     function discFor(name, w, h) {
         const side = Math.min(w, h)
