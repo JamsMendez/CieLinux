@@ -29,7 +29,8 @@ test('wallpaper attachment: bottom layer, every edge, zone -1, opaque, full-size
     assert.match(wallpaperBranch, /layer->setExclusiveZone\(-1\);/);
     // The mini placement (glider, 240 px size) never touches the wallpaper surface.
     assert.doesNotMatch(wallpaperBranch, /miniGlider|setDesiredSize\(QSize\(240/);
-    assert.match(prepare, /view\.setColor\(wallpaper \? QColor\(Qt::black\) : QColor\(Qt::transparent\)\);/);
+    // Opaque unless it fades in over the page it replaces (crossfade on a live switch).
+    assert.match(prepare, /view\.setColor\(wallpaper && !fadeIn \? QColor\(Qt::black\) : QColor\(Qt::transparent\)\);/);
     assert.match(prepare, /if \(wallpaper\) view\.resize\(screen->size\(\)\);/);
     // Same output for both modes; input always passes through.
     assert.match(prepare, /view\.setScreen\(screen\);/);

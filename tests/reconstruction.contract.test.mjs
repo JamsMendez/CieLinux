@@ -39,6 +39,19 @@ struct FakeView {
 void queuedScenario(int scenario) {
  Policy policy(QUrl("qrc:/processing/index.html?variant=mini&fps=30"));
  struct { std::unique_ptr<FakeView> view = std::make_unique<FakeView>(); int stage = 0; } attachment;
+ // Crossfade fakes: the current token, the retiring slot and the reveal deadline.
+ struct FakeToken { bool on = true; bool revealed() const { return on; } } token;
+ if (scenario == 7) token.on = false; // The replaced page never revealed: nothing to keep.
+ FakeToken *currentToken = &token;
+ int handOvers = 0;
+ auto handOver = [&] { ++handOvers; };
+ struct { std::unique_ptr<FakeView> view; } retiring;
+ if (scenario == 8) retiring.view = std::make_unique<FakeView>();
+ struct { int started = 0; void start(int) { ++started; } } revealDeadline;
+ // Scenario 9: a switch during the fade keeps the fully drawn predecessor (no hand-over).
+ struct { bool active = false; bool isActive() const { return active; } void stop() { active = false; } } retireTimer;
+ if (scenario == 9) retireTimer.active = true;
+ constexpr int revealDeadlineMs = 2000;
  int preparations = 0;
  auto prepareAttachment = [&](int generation) {
   ++preparations; assert(policy.admits(generation));
@@ -58,8 +71,14 @@ void queuedScenario(int scenario) {
  if (scenario == 2) assert(preparations == 1 && attachment.view->shows == 0 && policy.terminalResult() == 1);
  if (scenario == 3) assert(preparations == 1 && attachment.view->shows == 0 && policy.closed());
  if (scenario == 4) assert(preparations == 1 && attachment.view->shows == 0 && policy.terminalResult() == 1);
- if (scenario == 5) assert(preparations == 0 && attachment.view->shows == 0 && policy.closed());
+ // The replaced view is never hidden on replacement: it stays mapped under the new page.
+ if (scenario == 5) assert(preparations == 1 && attachment.view->shows == 1 && !policy.closed());
  if (scenario == 6) assert(preparations == 1 && attachment.view->shows == 1 && !policy.closed());
+ if (scenario == 0 || scenario == 5) assert(handOvers == 1 && revealDeadline.started == 0);
+ if (scenario == 6 || scenario == 7) assert(handOvers == 0 && revealDeadline.started == 0);
+ if (scenario == 7) assert(preparations == 1 && attachment.view->shows == 1 && !policy.closed());
+ if (scenario == 8) assert(preparations == 1 && attachment.view->shows == 1 && revealDeadline.started == 1);
+ if (scenario == 9) assert(handOvers == 0 && !retireTimer.active && preparations == 1 && attachment.view->shows == 1);
  policy.closeNormally();
 }
 void load(Policy &p, int g) { p.loadSucceededFor(g, QUrl("qrc:/processing/index.html?variant=mini&fps=30")); }
@@ -175,7 +194,16 @@ int main(int argc, char **argv) {
    p.incident(1, 0); assert(p.closed() && p.terminalResult() == 1); // No native reconstruction binding.
    assert(!p.bindReconstruction([](int) {}));
   }
-  for (int scenario = 0; scenario < 7; ++scenario) queuedScenario(scenario);
+  {
+   // Crossfade token: an initial page is revealed from the start; a replacement latches once.
+   AttachmentToken initial(1, true, nullptr); assert(initial.revealed());
+   AttachmentToken fading(2, false, nullptr); int changes = 0;
+   QObject::connect(&fading, &AttachmentToken::revealedChanged, [&] { ++changes; });
+   assert(!fading.revealed());
+   fading.reveal(); fading.reveal();
+   assert(fading.revealed() && changes == 1 && fading.generation() == 2);
+  }
+  for (int scenario = 0; scenario < 10; ++scenario) queuedScenario(scenario);
   std::puts("GENERATION_CONTRACT_PASS");
   QCoreApplication::exit(0);
  });
@@ -462,7 +490,8 @@ test('one actually-used fresh construction path preserves lifetime wiring', () =
     assert.match(cpp, /QTimer::singleShot\(0, &policy, \[&, generation\] \{\s*if \(!policy\.admits\(generation\)\) return;[\s\S]*?replacementResult = prepareAttachment\(generation\);[\s\S]*?if \(!policy\.admits\(generation\)\) return;/);
     assert.match(cpp, /catch \(\.\.\.\) \{\s*policy\.constructionFailed\(generation\);\s*return;/);
     assert.match(cpp, /\[&, generation\] \{\s*if \(policy.admits\(generation\)\) policy.noteCloseReason\(Diagnostics::Reason::Dismissal\);\s*policy.closeGeneration\(generation\);\s*\}/);
-    assert.match(cpp, /new AttachmentToken\(generation, &view\)/);
+    assert.match(cpp, /auto \*token = new AttachmentToken\(generation, !fadeIn, &view\);\s*currentToken = token;/);
+    assert.match(cpp, /QStringLiteral\("sceneAttachment"\), QVariant::fromValue\(token\)/);
     assert.equal((cpp.match(/configureLifetime\(lifetime, options\)/g) || []).length, 1);
     assert.equal((cpp.match(/lifetime\.start\(/g) || []).length, 0);
     const scheduler = readFileSync(source('resident-control.h'), 'utf8');

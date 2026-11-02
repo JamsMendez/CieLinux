@@ -16,11 +16,24 @@ class AttachmentToken final : public QObject {
     QML_NAMED_ELEMENT(SceneAttachment)
     QML_UNCREATABLE("SceneAttachment is supplied by the native host")
     Q_PROPERTY(int generation READ generation CONSTANT)
+    // False while a replacement page is still hidden over its predecessor (crossfade on a
+    // live switch); the host latches it true once, when the page drew or the deadline passed.
+    Q_PROPERTY(bool revealed READ revealed NOTIFY revealedChanged)
 public:
-    AttachmentToken(int value, QObject *parent) : QObject(parent), value(value) {}
+    AttachmentToken(int value, bool revealed, QObject *parent)
+        : QObject(parent), value(value), isRevealed(revealed) {}
     int generation() const { return value; }
+    bool revealed() const { return isRevealed; }
+    void reveal() {
+        if (isRevealed) return;
+        isRevealed = true;
+        emit revealedChanged();
+    }
+signals:
+    void revealedChanged();
 private:
     const int value;
+    bool isRevealed;
 };
 
 class Policy final : public QObject {
