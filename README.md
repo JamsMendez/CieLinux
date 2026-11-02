@@ -270,6 +270,31 @@ budget, and `wallpaper-mode` is saved once the new page is ready. An alert on sc
 during a switch continues on the other surface for the rest of its duration, without a
 second sound. The default stays `scene-mini` (CielWin defaults to `scene`).
 
+### Crossfade
+
+Every live switch (scene, mode or frame rate) crossfades, so the desktop never shows
+between two pages:
+
+- The page being replaced stays on screen while the new one is built under a fully
+  transparent root.
+- The new page fades in over 300 ms once it has loaded and drawn its first frame. If it
+  never reports that frame, it fades in after 2 s anyway.
+- The old page is destroyed only once the fade has finished. A second switch during the
+  fade keeps the fully drawn page and drops the one that was fading in.
+
+> **Note (Hyprland):** the compositor's own layer animations (Omarchy enables
+> `layersOut` with a fade) redraw the destroyed page fading out *on top of* the new one,
+> which reads as a flicker (new → old → new). `install.sh` does not change this. Turn
+> them off for the CieLinux surface (namespace `cielinux`) in your own config:
+>
+> ```lua
+> -- ~/.config/hypr/windows.lua (Lua config, Hyprland 0.56+)
+> hl.layer_rule({ match = { namespace = "^cielinux$" }, no_anim = true, animation = "none" })
+> ```
+>
+> With a hyprlang config, use the equivalent no-animation layer rule for your Hyprland
+> version (see [Layer rules](https://wiki.hypr.land/Configuring/Window-Rules/#layer-rules)).
+
 ### Pause under fullscreen windows
 
 While a fullscreen window covers the wallpaper's output, the scene pauses: the page

@@ -20,6 +20,12 @@ Item {
     readonly property var sceneDisc: discFor(sceneRoot.sceneName, sceneRoot.width, sceneRoot.height)
     width: 320
     height: 320
+    // Crossfade on a live switch: a replacement starts hidden over the page it replaces and
+    // fades in once the host reveals it (first frame drawn, or the host deadline). The page
+    // still renders underneath, which is what lets it report that first frame. The duration
+    // mirrors crossfadeMs in main.cpp. An initial attachment is revealed from the start.
+    opacity: sceneRoot.sceneAttachment.revealed ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
     // Mirrors each scene's own mini geometry (see README "Host occlusion disc (D1)").
     function discFor(name, w, h) {
         const side = Math.min(w, h)

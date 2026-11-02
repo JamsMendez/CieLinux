@@ -432,7 +432,44 @@ int main(int argc, char **argv) {
         }
     } attachment;
     attachment.diagnostics = &policy.lifecycleDiagnostics();
-    policy.bindHost([&] { if (attachment.view) attachment.view->hide(); }, [&] {
+    // Crossfade on replacement: the attachment being replaced stays mapped (never shown again,
+    // only retired) until its successor has drawn and faded in, so a switch never uncovers the
+    // desktop between the two pages. At most one predecessor is kept.
+    Attachment retiring;
+    retiring.diagnostics = &policy.lifecycleDiagnostics();
+    QPointer<AttachmentToken> currentToken; // The current attachment's token (its view owns it).
+    constexpr int crossfadeMs = 300;        // Mirrors the opacity Behavior in view.qml.
+    constexpr int revealDeadlineMs = 2000;  // A page that never reports its first frame still shows.
+    QTimer revealDeadline, retireTimer;
+    revealDeadline.setSingleShot(true);
+    retireTimer.setSingleShot(true);
+    // Moves the current attachment into the retiring slot; the previous predecessor goes first.
+    auto handOver = [&] {
+        retireTimer.stop();
+        retiring.reset();
+        std::swap(retiring.profile, attachment.profile);
+        std::swap(retiring.view, attachment.view);
+        std::swap(retiring.closingConnection, attachment.closingConnection);
+        retiring.generation = attachment.generation;
+        retiring.stage = std::exchange(attachment.stage, 0);
+    };
+    auto revealCurrent = [&] {
+        revealDeadline.stop();
+        // A deadline can fire between a retarget and its queued rebuild: never reveal a page
+        // that is already being replaced.
+        if (!currentToken || currentToken->revealed() || !policy.admits(currentToken->generation())) return;
+        currentToken->reveal();
+        if (retiring.view) retireTimer.start(crossfadeMs + 100);
+    };
+    QObject::connect(&retireTimer, &QTimer::timeout, &policy, [&] { retiring.reset(); });
+    QObject::connect(&revealDeadline, &QTimer::timeout, &policy, revealCurrent);
+    QObject::connect(&policy, &Policy::readyChanged, &policy, [&] {
+        if (policy.ready()) revealCurrent();
+    });
+    policy.bindHost([&] {
+        if (attachment.view) attachment.view->hide();
+        if (retiring.view) retiring.view->hide();
+    }, [&] {
         lifetime.stop();
         control->cancel();
         QObject::disconnect(removalConnection);
@@ -481,8 +518,11 @@ int main(int argc, char **argv) {
         view.setScreen(screen);
         view.setFlags(Qt::FramelessWindowHint | Qt::WindowTransparentForInput
                       | Qt::WindowDoesNotAcceptFocus);
-        // The wallpaper is opaque; the mini is keyed over the desktop.
-        view.setColor(wallpaper ? QColor(Qt::black) : QColor(Qt::transparent));
+        // A replacement starts hidden over its predecessor and fades in (see `retiring`).
+        const bool fadeIn = bool(retiring.view);
+        // The wallpaper is opaque; the mini is keyed over the desktop. A fading wallpaper must
+        // be transparent too, or its window would cover the predecessor with black.
+        view.setColor(wallpaper && !fadeIn ? QColor(Qt::black) : QColor(Qt::transparent));
         view.setResizeMode(QQuickView::SizeRootObjectToView);
         if (wallpaper) view.resize(screen->size());
         else view.resize(MiniPlacement::side, MiniPlacement::side);
@@ -519,6 +559,8 @@ int main(int argc, char **argv) {
         layer->setActivateOnShow(false);
         layer->setScreen(screen);
         layer->setCloseOnDismissed(true);
+        auto *token = new AttachmentToken(generation, !fadeIn, &view);
+        currentToken = token;
         view.setInitialProperties(QVariantMap{
             {QStringLiteral("sceneProfile"), QVariant::fromValue(&profile)},
             {QStringLiteral("scenePolicy"), QVariant::fromValue(&policy)},
@@ -526,7 +568,7 @@ int main(int argc, char **argv) {
             {QStringLiteral("sceneName"), scene},
             {QStringLiteral("sceneMode"), sceneHost.mode()},
             {QStringLiteral("sceneAlerts"), QVariant::fromValue(&alertBridge)},
-            {QStringLiteral("sceneAttachment"), QVariant::fromValue(new AttachmentToken(generation, &view))}
+            {QStringLiteral("sceneAttachment"), QVariant::fromValue(token)}
         });
         view.setSource(QUrl(QStringLiteral("qrc:/view.qml")));
         if (view.status() != QQuickView::Ready) { policy.constructionFailed(generation); return 1; }
@@ -535,12 +577,17 @@ int main(int argc, char **argv) {
         return 0;
     };
     policy.bindReconstruction([&](int generation) {
-        // Invalidate/hide immediately, but never destroy a live QML/native sender
-        // on its callback stack. Policy-context work expires with the owner.
-        if (!policy.admits(generation)) return;
-        if (attachment.view) attachment.view->hide();
+        // The old generation is already invalidated; its view stays mapped (see `retiring`).
+        // Never destroy a live QML/native sender on its callback stack: all retirement runs on
+        // a later turn. Policy-context work expires with the owner.
         if (!policy.admits(generation)) return;
         QTimer::singleShot(0, &policy, [&, generation] {
+            if (!policy.admits(generation)) return;
+            // Keep whatever is on screen. A revealed attachment covers its predecessor, so it
+            // becomes the one retiring; one still hidden never showed and is simply replaced.
+            // Mid-fade the predecessor is the only fully drawn page: keep it, drop the fading one.
+            if (retireTimer.isActive()) retireTimer.stop();
+            else if (attachment.view && currentToken && currentToken->revealed()) handOver();
             if (!policy.admits(generation)) return;
             int replacementResult = 1;
             try {
@@ -558,6 +605,7 @@ int main(int argc, char **argv) {
             attachment.view->show();
             attachment.stage = 4;
             policy.lifecycleDiagnostics().record(Diagnostics::Event::Mapped, generation);
+            if (retiring.view) revealDeadline.start(revealDeadlineMs);
         });
     });
     const int initialGeneration = policy.generation();
