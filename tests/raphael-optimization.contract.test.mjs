@@ -413,6 +413,34 @@ test('raphael mini: glyph-ring delimiters bake once into a device-aligned layer 
     assert.deepEqual(h.errors, []);
 });
 
+test('raphael mini: bright stars grow no larger than the largest regular star; the wallpaper keeps them', () => {
+    const arcRadii = ops => ops.filter(op => op[0] === 'arc').map(op => op[3]);
+    const radii = (h, { cap = false } = {}) => {
+        h.tick(QUIET_MS);
+        const [cx, cy] = centre(h);
+        const progress = h.sandbox.animationProgress(QUIET_MS);
+        const real = arcRadii(h.capture(() => h.sandbox.drawStars(cx, cy, progress, progress * Math.PI * 2)));
+        // The reference stream, with every base radius capped first when asked (then restored).
+        if (cap) h.evaluate('for (const s of stars) { s.unclampedR = s.r; s.r = Math.min(s.r, MINI_STAR_MAX_BASE_RADIUS); }');
+        const reference = h.recorder();
+        h.sandbox.referenceLayers(reference.proxy).drawStars(cx, cy, progress, progress * Math.PI * 2);
+        if (cap) h.evaluate('for (const s of stars) s.r = s.unclampedR;');
+        return { real, reference: arcRadii(reference.ops) };
+    };
+    const mini = harness();
+    // The cap is the largest regular (non-bright) base radius in scene-data.js: 0.28 + 1.20.
+    assert.equal(mini.evaluate('MINI_STAR_MAX_BASE_RADIUS'), 1.48);
+    assert.ok(mini.evaluate('stars.some(s => s.r > MINI_STAR_MAX_BASE_RADIUS)'), 'some bright stars exceed the cap');
+    const capped = radii(mini, { cap: true });
+    assert.ok(capped.real.length > 0);
+    assert.deepEqual(capped.real, capped.reference, 'mini stars are the reference stream with capped base radii');
+    const uncapped = radii(harness()).reference;
+    assert.ok(Math.max(...uncapped) > Math.max(...capped.real), 'the cap shrinks the largest stars');
+    const full = radii(harness({ variant: 'full' }));
+    assert.deepEqual(full.real, full.reference, 'the wallpaper keeps the full range');
+    assert.deepEqual(mini.errors, []);
+});
+
 test('raphael mini: each glyph ring is baked once and drawn rotated with one drawImage per frame', () => {
     const h = harness();
     const first = h.tick(QUIET_MS);
