@@ -64,10 +64,10 @@ Qt shutdown timer; emergency `_exit` is failure, **not a child-cleanup guarantee
 ## What is sampled
 
 After load and draw readiness pass the existing checkpoint, wrappers forward the original
-render and 17 stage calls with their receiver, arguments, return values and exceptions.
+render and 18 stage calls with their receiver, arguments, return values and exceptions.
 Stage timings are recorded only inside wrapped render calls. The already-queued original
 render callback is excluded; its successor uses the wrapper. Scheduler throttle callbacks
-are **not draws**. Only complete draws with all 17 stages exactly once in order count;
+are **not draws**. Only complete draws with all 18 stages exactly once in order count;
 partial/misordered frames fail rather than contribute samples.
 
 The original scheduler, RNG, formulas and live timestamps remain unchanged: no extra
@@ -102,8 +102,8 @@ Report = { kind: "native-processing", status: "synchronous-layer-attribution",
 Checkpoint = { ok: true, dpr: 1, css: [3440, 1440], foreground: [3440, 1440],
                nebula: [1548, 648], nebulaCap: 0.45 }
 Attribution = { version: 1, warmup: 30, count: 120, timestampRangeMs: [firstMs, lastMs],
-                clock: Clock, frame: Stats, stages: [17 ordered Stage objects], residual: Stats }
-Clock = { reads: 5400, zeroDeltas, minimumPositiveDeltaMs, residualToleranceMs: 0 }
+                clock: Clock, frame: Stats, stages: [18 ordered Stage objects], residual: Stats }
+Clock = { reads: 5700, zeroDeltas, minimumPositiveDeltaMs, residualToleranceMs: 0 }
 Stats = { count: 120, meanMs, medianMs, p95Ms, firstHalfMeanMs, secondHalfMeanMs }
 Stage = { name, ...Stats }
 ```
@@ -113,7 +113,8 @@ The exact stage order is:
 ```text
 renderNebula, ensureSprites, drawSoftOvalFields, drawStars, drawRadialStreaks,
 drawLensFlares, drawChromaticSideLoops, drawSegmentedSphere, drawAtomicOrbits,
-drawOrbitBlocks, drawCentralOctagon, drawTriangularPrism, drawPerspectiveRays,
+drawOrbitBlocks, drawCentralOctagon, drawTriangularPrism, drawAtomicOrbitsFront,
+drawPerspectiveRays,
 drawCentralCore, drawFilmGrain, drawVignette, renderAlertOverlay
 ```
 
@@ -125,7 +126,7 @@ are bounded to 15,000 ms; timestamp endpoints are nonnegative safe-number values
 increasing and at most 15,000 ms apart. Mean/half-mean arithmetic consistency tolerance
 is `1e-7` ms, not a measurement error bound.
 
-Clock reads cover warmup and samples: 150 × (2 frame + 34 stage reads) = 5,400.
+Clock reads cover warmup and samples: 150 × (2 frame + 36 stage reads) = 5,700.
 `zeroDeltas` is an integer from 0 to 5,398; the minimum positive observed step must be
 positive and at most 15,000 ms. **It is not calibrated clock resolution or an error bound.**
 Every negative residual is rejected, including tiny negatives; nothing is silently
@@ -146,7 +147,7 @@ stage. Subscripts 1/2 denote the two half means.
 
 | Gate | Required evidence |
 |---|---|
-| Valid run | 120 samples, all 17 ordered stages each with count 120, 30 complete warmups; no errors, deadline or forced cleanup; unchanged start/final endpoints and complete containment audit |
+| Valid run | 120 samples, all 18 ordered stages each with count 120, 30 complete warmups; no errors, deadline or forced cleanup; unchanged start/final endpoints and complete containment audit |
 | Frame stability | `max(F1,F2)/min(F1,F2) <= 1.25`; frame median > 0; frame `p95/median <= 3` |
 | Residual | `R1/F1 < 0.25` **and** `R2/F2 < 0.25` |
 | Candidate dominance | Stage `S1/F1 >= 0.25` **and** `S2/F2 >= 0.25` |

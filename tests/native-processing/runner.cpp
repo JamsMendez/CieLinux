@@ -83,13 +83,13 @@ static bool validAttribution(const QJsonValue &value) {
     const auto clock = object["clock"].toObject();
     if (!object["clock"].isObject() ||
         !exactKeys(clock, {"reads", "zeroDeltas", "minimumPositiveDeltaMs", "residualToleranceMs"}) ||
-        !number(clock["reads"], 5400, 5400) || !number(clock["zeroDeltas"], 0, 5398) ||
+        !number(clock["reads"], 5700, 5700) || !number(clock["zeroDeltas"], 0, 5698) ||
         std::floor(clock["zeroDeltas"].toDouble()) != clock["zeroDeltas"].toDouble() ||
         !number(clock["minimumPositiveDeltaMs"], 0, 15000) || clock["minimumPositiveDeltaMs"].toDouble() == 0 ||
         !number(clock["residualToleranceMs"], 0, 0)) return false;
     static const QStringList names{"renderNebula", "ensureSprites", "drawSoftOvalFields", "drawStars",
         "drawRadialStreaks", "drawLensFlares", "drawChromaticSideLoops", "drawSegmentedSphere",
-        "drawAtomicOrbits", "drawOrbitBlocks", "drawCentralOctagon", "drawTriangularPrism",
+        "drawAtomicOrbits", "drawOrbitBlocks", "drawCentralOctagon", "drawTriangularPrism", "drawAtomicOrbitsFront",
         "drawPerspectiveRays", "drawCentralCore", "drawFilmGrain", "drawVignette", "renderAlertOverlay"};
     const auto stages = object["stages"].toArray();
     const auto frame = object["frame"].toObject(), residual = object["residual"].toObject();
