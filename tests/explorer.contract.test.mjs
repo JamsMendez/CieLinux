@@ -20,15 +20,18 @@ const selected = 'qrc:/explorer/index.html?variant=mini&fps=30';
 // Pinned CielWin cebb941^ (4a83e62) Wallpaper/Web/explorer/js sources: the working tree no longer has them.
 const referenceSha256 = {
     // Re-pinned after old-name→CielWin comment rename (text-only); was d14e9c85133be01687e2dc5e992e8966a1fe1d1107a0a4fe2c880ad75ebc07c4
-    config: 'a78dd46f74c8063a1134f015a35198bb5f2e17da7e08f9f0cf6b19eddd2c0044',
+    // Re-pinned for the blackletter script rings (CielScenes d63351e, 9187df4) (odd/tasks/baseline-contracts.md); was a78dd46f74c8063a1134f015a35198bb5f2e17da7e08f9f0cf6b19eddd2c0044
+    config: '3b549fbb88aa814050e33d833d473c7ceb15c053616855aa24a53ef08077fc5c',
     math: 'fb643e65a3677d4b4f34b251d182ae08985ff323f1dcbff4adcf8ae47d1fd220',
-    glyphs: '99ad743bff502854b72af11edc72a03aff14d5fdc552153dc445677696a4fc55',
+    // Re-pinned for the blackletter script rings (CielScenes d63351e, 9187df4) (odd/tasks/baseline-contracts.md); was 99ad743bff502854b72af11edc72a03aff14d5fdc552153dc445677696a4fc55
+    glyphs: 'bd232eb6882897546b59b171c791736c30cd61ebfb7e5699d9ee46e403d19b42',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1 + O1b: c7e2bbc5c6be17389d27632604d14679b8a8b0ada0f063447ddbd622136a822e; CielWin reference: 85a55b1bda1ec79011b4a5ac2a81c3eddc73a979f657fc509e3b529fff3b8e3f
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was 664b7a66e951624ab3ad8f228a97b3f42914387498c6810439af0471ae0c265b
     earth: '4a40ed95962d5a2a28959bcee2c14962be175c6d96447728d159ccee86524b55',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1 + O1b: 5fbbf2e05ce270ae388f41ec83513108963577cdf1ce689cdac925be8588f68f; CielWin reference: 085d434f797d114b3084988494e37e9aaf9939cf1100dd0a3f19ecd1f9e6962b
     // Re-pinned for wallpaper constellation detail (odd/tasks/scene-wallpaper-scaling.md); was e17b469e45a21df9cca259b1b8b0a48d4104e75ab92166fb089dbb42e702ad9b
-    rings: 'dd4d45929f85dfdd77a559de0c0800ada129f171e763a9e2f63c58d33864340a',
+    // Re-pinned for the blackletter script rings (CielScenes d63351e, 9187df4) (odd/tasks/baseline-contracts.md); was dd4d45929f85dfdd77a559de0c0800ada129f171e763a9e2f63c58d33864340a
+    rings: '8aa1dc3724416f2389c294ac0ce48cd4486f0787f4a172b413126a18720a5d06',
     // Linux wallpaper optimization (W1, odd/tasks/wallpaper-explorer-idle-cpu.md); O1 + O1b + O1c P1 + O1d: 2ad6813e392bb5a948a9fa3f30c49364a190fb7cc20979fa25dd685f1ce24201; O1c P1: b8305ad6ed0d8b3a1d6697a4b458f6642e2049d8f74cb21d57def777ee1aad71; O1b: af1b6a3ebbb98ef7006839ab03f9967c6ae6191d98a113bfe0fde54a31930211; CielWin reference: 8103d08efe541a6853bd63f35961137a18f009273821ed40d995667c44a9d39a
     'rising-sparks': '8f78bfa357a698354107185a9a76f468c7b01a309aedf3cb9b537486c9f202ad',
     // Re-pinned after old-name→CielWin comment rename (text-only); was 2480a1ae00f32a88b8c1887b638532dcce28acff428d07ee5ba720f1ceb88e69

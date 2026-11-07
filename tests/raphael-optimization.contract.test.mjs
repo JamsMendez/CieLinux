@@ -71,7 +71,8 @@ function drawGlyphRings(cx, cy, progress) {
 }
 function drawOutlineGlyphRing(cx, cy, radius, count, spriteSet, rotation) {
   for (let i = 0; i < count; i++) {
-    const angle = rotation + (i / count) * TAU;
+    // CielScenes 1383eed: script rings lay out their own per-sprite angle (glyphRingSpriteAngle).
+    const angle = rotation + glyphRingSpriteAngle(spriteSet, i);
     const x = cx + Math.cos(angle) * radius;
     const y = cy + Math.sin(angle) * radius;
     ctx.save();
@@ -453,10 +454,13 @@ test('raphael mini: each glyph ring is baked once and drawn rotated with one dra
         [h.evaluate('sprites.outlineGlyphsGold'), gold.radius, gold.rotation],
         [h.evaluate('sprites.outlineGlyphs'), (blue.innerRadius + blue.outerRadius) / 2, progress * Math.PI * 2 * h.evaluate('GLYPH_RING_BLUE_ROTATION_SPEED')],
     ];
-    // Reference: ~one stamp per glyph per frame.
+    // Reference: one stamp per glyph per frame (the script rings lay out fewer, wider letters than the old
+    // outline glyphs: 92 at 240 px, was >= 150; CielScenes 1383eed).
     const reference = h.recorder();
     h.sandbox.referenceLayers(reference.proxy).drawGlyphRings(cx, cy, progress);
-    assert.ok(count(reference.ops, 'drawImage') >= 150, `${count(reference.ops, 'drawImage')} reference stamps`);
+    const glyphs = rings.reduce((sum, [spriteSet]) => sum + spriteSet.length, 0);
+    assert.ok(glyphs >= 80, `${glyphs} script glyphs`);
+    assert.equal(count(reference.ops, 'drawImage'), glyphs, 'one reference stamp per glyph');
     for (const [spriteSet, radius, rotation] of rings) {
         // The bake holds exactly the reference ring stream at rotation 0, centred, at 2x the device scale.
         const ring = h.recorder();
@@ -728,8 +732,10 @@ test('raphael O3 changes are removable marked blocks over the CielWin reference'
     // Re-pinned after old-name→CielWin comment rename (text-only); was 2a745ee5c5757d09eb475b30fab349ba53cb79d63321dc234fbdef24537de2fc
     // Re-pinned for CielWin fixes port (odd/tasks/shared-scenes.md); was e6265d4759314ffb58b143b4af56edfb16cd20b0fea3530d172f207eab906c68
     // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was b79123a36d754a66a7d26c73e9a33cba258d4dd27f873bcc7dd2c7484652b871
-    assert.equal(sha256(strip(read('raphael/js/layers.js'))), 'ff9dcc4f3930536805f145eea87fc6909c429d973333b4b26ac30ac7984cab97');
-    assert.equal(sha256(strip(read('raphael/js/sprites.js'))), 'b97ab8fba52b6255e33909d470ff871eb269c6125d9cdeb9b736049b55af8ee5');
+    // Re-pinned for the blackletter script rings and mini stars (CielScenes 1383eed, c4918ca, 7ba57b3, 43400a3; O3 bake follows glyphRingSpriteAngle) (odd/tasks/baseline-contracts.md); was ff9dcc4f3930536805f145eea87fc6909c429d973333b4b26ac30ac7984cab97
+    assert.equal(sha256(strip(read('raphael/js/layers.js'))), '868b54c8161100cec37fb5cae7ca8d9918166184e57d81484a546c4401ea8c1e');
+    // Re-pinned for the blackletter script rings and mini stars (CielScenes 1383eed, c4918ca, 7ba57b3, 43400a3; O3 bake follows glyphRingSpriteAngle) (odd/tasks/baseline-contracts.md); was b97ab8fba52b6255e33909d470ff871eb269c6125d9cdeb9b736049b55af8ee5
+    assert.equal(sha256(strip(read('raphael/js/sprites.js'))), 'c60930ddf2d508c5358d629951a669363d8ac6f18c3745eb440f3eb9a128e461');
     for (const name of ['layers', 'sprites'])
         assert.match(read(`raphael/js/${name}.js`), /\/\/ Linux mini optimization begin \(O3\)/, name);
 });
