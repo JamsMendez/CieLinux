@@ -163,7 +163,7 @@ function sceneHarness(scene, loggerThrows = false) {
         // A4: shared/js/alert-overlay.js's clock and stage, idle (no alert showing).
         alertSceneMs: ms => ms, renderAlertOverlay() {} });
     for (const name of ['drawSegmentedSphere', 'drawAtomicOrbits', 'drawOrbitBlocks',
-        'drawCentralOctagon', 'drawTriangularPrism', 'drawPerspectiveRays', 'drawCentralCore'])
+        'drawCentralOctagon', 'drawTriangularPrism', 'drawAtomicOrbitsFront', 'drawPerspectiveRays', 'drawCentralCore'])
         sandbox[name] = () => { if (fail) throw Error('outer draw'); };
     const source = read(`${scene}/js/main.js`);
     vm.runInContext(source, sandbox);

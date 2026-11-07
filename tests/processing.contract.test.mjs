@@ -122,11 +122,13 @@ test('synthetic transport probes occur once at initialization, separately from a
 // strips the marked blocks back to those reference hashes.
 const referenceSha256 = {
     // Re-pinned after old-name→CielWin comment rename (text-only); was 3b0f1e6130112af7b2b1d4f63227815275558229e6eb3a4037ed99a23e328b11
-    config: '7bc8567353f200d0d96942d452c321bc614e9fab8be2d05c58ec5c57f38ae4d2',
+    // Re-pinned for the band motion circuit and octagon zoom (odd/tasks/scenes-band-motion-contracts.md); was 7bc8567353f200d0d96942d452c321bc614e9fab8be2d05c58ec5c57f38ae4d2
+    config: '15750f44f199a80b40f44e3aaa707547e3011aa893983e28d83ea4994e9eac43',
     math: '10951705adf6a91c232909443cc34fb4b54b185c2e219508330aed2e38dfc20f',
     // Linux mini optimization (O2); CielWin reference: 0ae7e1443c5da47f92a0434adbd87bc1a7ef1a59a69f8f0a6bb55a1dc4788bf8
     sphere: 'daf83b2c906eb0ed5bf1bf528f4a761f62190f98c9e6a29f8c0df82480c90304',
-    'scene-data': 'de7018c6f1079238acdd70db64dcffbae719099df5c4ded97b75c07e4d19451b',
+    // Re-pinned for the flat tilted orbit blocks (odd/tasks/scenes-band-motion-contracts.md); was de7018c6f1079238acdd70db64dcffbae719099df5c4ded97b75c07e4d19451b
+    'scene-data': '620ba5e2d9153cf0beca438d11bddb1a30f253dc06ba01a26d643b358a4e0da4',
     // Linux mini optimization (O2; B5 wallpaper glow index); was e32fc55627878ee0e83e3496d41a99c72d26a65eab93beefe1acb88f74460255;
     // CielWin reference: cd1c36857f4504393befb6c53b12e562d458f461860b1d366f4b24c9b5b0094b
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 62eac9e5a312388493bed26d413b0f427d83324a67893b6feacee47c9502946a
@@ -138,7 +140,8 @@ const referenceSha256 = {
     // Re-pinned after exact arithmetic-reuse contracts (odd/tasks/processing-arithmetic-reuse.md).
     // Re-pinned for the cached wallpaper vignette (odd/tasks/scene-identical-caches.md T1); was 580e69b2847adafd589987451c28755e44810d8069de12194e978698ba3c38ca
     // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was cb30b3f820096bddf25cfe661227d99541c5c4c7f6f6e1620e0f431b15e13fbe
-    layers: '7a39b66038e2c5f0ec9d63480954ea5e7402fbb4829a9348d616efc831d98b4e',
+    // Re-pinned for the rubber-band rings, tilted orbit blocks and band motion (odd/tasks/scenes-band-motion-contracts.md); was 7a39b66038e2c5f0ec9d63480954ea5e7402fbb4829a9348d616efc831d98b4e
+    layers: '8a57166917a66938a9b35b2136300861436dcbe2ad88e4c02abddd927b3e65e0',
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162
     nebula: 'eac31e99953bd84950cee77603243e6ed2dccea0598f1e68cb3ad59d57f42d25',
 };
@@ -180,7 +183,7 @@ test('HTML dependencies match the finite packaged browser manifest', () => {
     // R1 (odd/tasks/alert-title-reach.md): the one additive block is the alert title reach limits.
     const hook = read('processing/js/see-through-hook.js')
         .replace(/^\/\/ Linux port begin \(R1\)[^\n]*\n[\s\S]*?^\/\/ Linux port end\.\n\n/gm, '');
-    assert.equal(sha256(hook), 'ff0dc530ca117e5cda5849ebb2b0520b7517dd0385fcf27c7c2f30558037bd05', 'CielWin processing see-through hook, verbatim');
+    assert.equal(sha256(hook), '655155feb940ed668fde67dfdc0e89de3546819dae476dfde0c6c3626b5f0be4', 'CielScenes 87dfae5 processing see-through hook without R1');
 });
 
 test('main.js restores the CielWin alert clock and overlay stage (A4)', () => {

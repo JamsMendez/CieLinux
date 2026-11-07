@@ -28,7 +28,7 @@ const nativeProcessingAttribution = (() => {
     'use strict'; // Preserve null/primitive receivers for strict original functions too.
     const names = ['renderNebula', 'ensureSprites', 'drawSoftOvalFields', 'drawStars',
         'drawRadialStreaks', 'drawLensFlares', 'drawChromaticSideLoops', 'drawSegmentedSphere',
-        'drawAtomicOrbits', 'drawOrbitBlocks', 'drawCentralOctagon', 'drawTriangularPrism',
+        'drawAtomicOrbits', 'drawOrbitBlocks', 'drawCentralOctagon', 'drawTriangularPrism', 'drawAtomicOrbitsFront',
         'drawPerspectiveRays', 'drawCentralCore', 'drawFilmGrain', 'drawVignette', 'renderAlertOverlay'];
     const warmup = 30, count = 120;
     const metrics = ['meanMs', 'medianMs', 'p95Ms', 'firstHalfMeanMs', 'secondHalfMeanMs'];
@@ -50,8 +50,8 @@ const nativeProcessingAttribution = (() => {
             !range.every(value => Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER) ||
             range[1] <= range[0] || range[1] - range[0] > 15000 ||
             !keys(clock, ['reads', 'zeroDeltas', 'minimumPositiveDeltaMs', 'residualToleranceMs']) ||
-            clock.reads !== 5400 || !Number.isInteger(clock.zeroDeltas) || clock.zeroDeltas < 0 ||
-            clock.zeroDeltas >= 5399 || !duration(clock.minimumPositiveDeltaMs) ||
+            clock.reads !== 5700 || !Number.isInteger(clock.zeroDeltas) || clock.zeroDeltas < 0 ||
+            clock.zeroDeltas >= 5699 || !duration(clock.minimumPositiveDeltaMs) ||
             clock.minimumPositiveDeltaMs === 0 || clock.residualToleranceMs !== 0) return false;
         if (!validStats(summary.frame) || !validStats(summary.residual) ||
             summary.frame.firstHalfMeanMs <= 0 || summary.frame.secondHalfMeanMs <= 0 ||
@@ -113,7 +113,7 @@ const nativeProcessingAttribution = (() => {
             const index = completed - warmup;
             rows[0][index] = elapsed;
             for (let i = 0; i < names.length; i++) rows[i + 1][index] = current[i];
-            rows[18][index] = residual;
+            rows[names.length + 1][index] = residual;
             timestamps[index] = timestamp;
         }
         completed++;
@@ -124,7 +124,7 @@ const nativeProcessingAttribution = (() => {
             // Zero deltas expose quantization; the strict residual policy can reject tiny negatives.
             clock: { reads, zeroDeltas, minimumPositiveDeltaMs, residualToleranceMs: 0 },
             frame: stats(rows[0]), stages: names.map((name, i) => ({ name, ...stats(rows[i + 1]) })),
-            residual: stats(rows[18]) };
+            residual: stats(rows[names.length + 1]) };
         stop(valid(summary) ? summary : { error: 'summary-or-clock' });
     }
     function start() {
@@ -133,7 +133,7 @@ const nativeProcessingAttribution = (() => {
         const originals = names.map(name => globalThis[name]);
         if (typeof originalRender !== 'function' || originals.some(fn => typeof fn !== 'function')) return false;
         started = true;
-        rows = Array.from({ length: 19 }, () => new Float64Array(count));
+        rows = Array.from({ length: names.length + 2 }, () => new Float64Array(count));
         current = new Float64Array(names.length);
         timestamps = new Float64Array(count);
         names.forEach((name, index) => {

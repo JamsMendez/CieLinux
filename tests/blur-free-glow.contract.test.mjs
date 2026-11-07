@@ -91,6 +91,12 @@ function harness(scene, { variant = 'full', width = 1920, height = 1080, dpr = 1
         const text = read(`${scene}/${script}`);
         vm.runInContext(reference && STRIPPED.has(script) ? strip(text) : text, sandbox, { filename: `${scene}/${script}` });
     }
+    // CielScenes' rubber-band rings and tilted orbit blocks (a0db507..2246425) live only in the O2 blocks
+    // and call PERF-5/O2b helpers, so they have no stripped CielWin form. The reference skips those
+    // layers; they are not shape-compared (SCENES.processing.layers), and "keeps no canvas shadow" covers them.
+    if (reference && scene === 'processing') {
+        for (const name of ['drawAtomicOrbits', 'drawOrbitBlocks', 'drawAtomicOrbitsFront']) sandbox[name] = () => {};
+    }
     const main = streams.get(scene0.id);
     const tick = ms => {
         assert.equal(frames.length, 1);
@@ -170,8 +176,8 @@ const SCENES = {
         frames: [0, 1234, 2600, 3300, 3500, 4567, 9999, 17321],
         layers: (h, ms) => {
             const [cx, cy] = centre(h), p = h.sandbox.animationProgress(ms), phase = p * Math.PI * 2;
+            // drawAtomicOrbits left the shape comparison with the CielScenes rubber-band rings (a0db507).
             return [
-                ['drawAtomicOrbits', cx, cy, p],
                 ...[0, 0.37, 1].map(pulse => ['drawCentralOctagon', cx, cy, p, pulse]),
                 ['drawPerspectiveRays', cx, cy, phase],
                 ['drawCentralCore', cx, cy, phase],

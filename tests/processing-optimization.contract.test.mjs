@@ -453,18 +453,6 @@ function referenceCachedStars(cx, cy, p, phase) {
 }
 // Test-only geometry adapter: retain drawAtomicOrbits -> drawFoldingBand -> current mini/full
 // renderer, including PERF-5 glow stamps. Only the point producer becomes the allocating reference.
-function referenceScratchBand(rx, ry, width, foldPhase) {
-  const points = foldingBandGeometry(rx, ry, width, foldPhase);
-  const p = miniFoldingBandPoints;
-  points.forEach((point, i) => {
-    p.leftX[i] = point.left[0];
-    p.leftY[i] = point.left[1];
-    p.rightX[i] = point.right[0];
-    p.rightY[i] = point.right[1];
-    p.front[i] = point.front;
-  });
-  return points.length;
-}
 `;
 
 // Recording Canvas2D mock: every method call and property set lands in one ordered stream per context.
@@ -527,10 +515,9 @@ function harness({ variant = 'mini', width = 240, height = 240, dpr = 1,
     }
     vm.runInContext(REFERENCE, sandbox, { filename: 'reference.js' });
     vm.runInContext(ARITHMETIC_REFERENCE, sandbox, { filename: 'arithmetic-reference.js' });
-    if (arithmeticReference) vm.runInContext(`
-        drawCachedStars = referenceCachedStars;
-        miniFoldingBandGeometry = referenceScratchBand;
-    `, sandbox);
+    // CielScenes' rubber-band rings (a0db507) build foldingBandGeometry from miniFoldingBandGeometry, so
+    // the bands have no independent reference geometry: only the stars are swapped.
+    if (arithmeticReference) vm.runInContext('drawCachedStars = referenceCachedStars;', sandbox);
     const main = streams.get(scene0.id);
     const tick = ms => {
         assert.equal(frames.length, 1);
@@ -624,11 +611,12 @@ function assertClose(actual, expected, where = '') {
 }
 
 // Exact-stream layers: same calls, same arguments, same property sets, in the same order.
+// CielScenes replaced the CielWin bands (rubber-band rings, a0db507..2246425) and orbit blocks (flat tilted
+// orbit, 26b000e), so drawAtomicOrbits and drawOrbitBlocks have no reference stream: their own contracts
+// follow below (odd/tasks/scenes-band-motion-contracts.md).
 const EXACT = [
-    ['drawAtomicOrbits', (h, ms) => [...centre(h), progressAt(h, ms)], ['foldingBandGeometry']],
     ['drawSegmentedSphere', (h, ms) => [...centre(h), progressAt(h, ms)],
         ['segmentedSpherePieceState', 'segmentedSpherePieceDimensions', 'griddedRectangleInternalLineCoordinates']],
-    ['drawOrbitBlocks', (h, ms) => [...centre(h), progressAt(h, ms) * Math.PI * 2], ['orbitBlockState']],
     ['drawPerspectiveRays', (h, ms) => [...centre(h), progressAt(h, ms) * Math.PI * 2],
         ['perspectiveRayStart', 'perspectiveRayEndpoint', 'visibleCanvasBounds']],
 ];
@@ -643,30 +631,9 @@ const quantizeRgba = value => typeof value !== 'string' ? value
         return Number(alpha) === q ? whole : `rgba(${rgb},${q})`;
     });
 const quantizeStream = ops => ops.map(op => op[0].startsWith('=') ? [op[0], quantizeRgba(op[1])] : op);
-const SEGMENT_OPS = ['=fillStyle', 'beginPath', 'moveTo', 'lineTo', 'lineTo', 'lineTo', 'closePath', 'fill',
-    '=strokeStyle', '=lineWidth', 'beginPath', 'moveTo', 'lineTo', 'stroke'];
-// O2b (P2): the reference band stream with each band's 48 quads moved into one path (same vertices, same
-// order, one subpath per quad) filled once, followed by the unchanged per-segment edge strokes.
-function o2bBands(ops, quantize = true) {
-    const out = [];
-    for (let i = 0; i < ops.length;) {
-        if (ops[i][0] !== '=fillStyle' || ops[i + 1]?.[0] !== 'beginPath') { out.push(ops[i++]); continue; }
-        const quads = [], strokes = [], fillStyle = ops[i][1];
-        while (ops[i]?.[0] === '=fillStyle') {
-            assert.deepEqual(ops.slice(i, i + SEGMENT_OPS.length).map(op => op[0]), SEGMENT_OPS);
-            assert.equal(ops[i][1], fillStyle);
-            quads.push(...ops.slice(i + 2, i + 7));
-            strokes.push(...ops.slice(i + 8, i + 14));
-            i += SEGMENT_OPS.length;
-        }
-        out.push(['=fillStyle', fillStyle], ['beginPath'], ...quads, ['fill'], ...strokes);
-    }
-    return quantize ? quantizeStream(out) : out;
-}
-const o2bExpected = (name, ops, quantize = true) => name === 'drawAtomicOrbits' ? o2bBands(ops, quantize)
-    : quantize ? quantizeStream(ops) : ops;
+const o2bExpected = ops => quantizeStream(ops);
 
-test('processing mini: bands, sphere, orbit blocks and perspective rays replay the reference stream (O2b-adjusted) without the allocating helpers', () => {
+test('processing mini: sphere and perspective rays replay the reference stream (O2b-adjusted) without the allocating helpers', () => {
     for (const dpr of [1, 2]) {
         const h = harness({ dpr });
         h.tick(0);
@@ -674,7 +641,7 @@ test('processing mini: bands, sphere, orbit blocks and perspective rays replay t
         for (const [name, argsAt, helpers] of EXACT) {
             for (const ms of TIMESTAMPS) {
                 const args = argsAt(h, ms);
-                const expected = o2bExpected(name, h.reference(name, ...args));
+                const expected = o2bExpected(h.reference(name, ...args));
                 let ops;
                 const calls = h.callsTo(helpers, () => { ops = h.capture(() => h.sandbox[name](...args)); });
                 assert.deepEqual(json(ops), json(expected), `${name} at ${ms} ms, dpr ${dpr}`);
@@ -749,12 +716,15 @@ test('processing mini: glow sprites are looked up without per-stamp string keys 
     assert.deepEqual(h.errors, []);
     const [cx2, cy2] = centre(h);
     for (const ms of [1234, 4567]) {
-        for (const [name, args] of [['drawSegmentedSphere', [cx2, cy2, progressAt(h, ms)]],
-            ['drawOrbitBlocks', [cx2, cy2, progressAt(h, ms) * Math.PI * 2]]]) {
-            const expected = o2bExpected(name, h.reference(name, ...args));
-            assert.deepEqual(json(h.capture(() => h.sandbox[name](...args))), json(expected), `${name} after resize`);
-        }
+        const args = [cx2, cy2, progressAt(h, ms)];
+        const expected = o2bExpected(h.reference('drawSegmentedSphere', ...args));
+        assert.deepEqual(json(h.capture(() => h.sandbox.drawSegmentedSphere(...args))), json(expected), 'drawSegmentedSphere after resize');
     }
+    lookups = 0;
+    glowCache.get = function (key) { lookups++; return get.call(this, key); };
+    h.capture(() => h.sandbox.drawOrbitBlocks(cx2, cy2, 1));
+    glowCache.get = get;
+    assert.equal(lookups, 0, 'orbit block glow is rebaked on resize, then looked up without keys');
 });
 
 test('processing mini bakes no full-scene sprites; full still bakes every sprite', () => {
@@ -793,24 +763,15 @@ test('processing mini: a steady frame creates no gradients and no offscreen canv
 // PERF-5: the wallpaper bands and rays stamp baked glows instead of their canvas shadows, so their
 // streams differ from the reference by design; blur-free-glow.contract.test.mjs checks that they keep
 // every reference shape. They still run without the allocating helpers.
-const PERF5_GLOW_LAYERS = new Set(['drawAtomicOrbits', 'drawPerspectiveRays']);
-// Wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md T1): below a 1080 px short side the wallpaper orbit
-// blocks (and their glow) shrink with the structure: each block's reference stream gains one
-// scale(k, k), k = min(1, min(W, H) / 1080), right after its rotate. At >= 1080 the stream is the exact reference.
-const wallpaperOrbitBlockScale = (width, height) => Math.min(1, Math.min(width, height) / 1080);
-const withOrbitBlockScale = (ops, k) => k === 1 ? ops
-    : ops.flatMap(op => op[0] === 'rotate' ? [op, ['scale', k, k]] : [op]);
-
-test('processing wallpaper (B5): sphere and orbit blocks keep the exact reference stream; no layer calls the allocating helpers', () => {
+const PERF5_GLOW_LAYERS = new Set(['drawPerspectiveRays']);
+test('processing wallpaper (B5): sphere keeps the exact reference stream; no layer calls the allocating helpers', () => {
     for (const [width, height, dpr] of [[320, 200, 1], [1920, 1080, 1], [1280, 720, 2], [800, 450, 1]]) {
         const h = harness({ variant: 'full', width, height, dpr });
         h.tick(0);
         for (const ms of [1234, 9999, 17321]) {
             for (const [name, argsAt, helpers] of EXACT) {
                 const args = argsAt(h, ms);
-                const reference = h.reference(name, ...args);
-                const expected = name === 'drawOrbitBlocks'
-                    ? withOrbitBlockScale(reference, wallpaperOrbitBlockScale(width, height)) : reference;
+                const expected = h.reference(name, ...args);
                 let ops;
                 const calls = h.callsTo(helpers, () => { ops = h.capture(() => h.sandbox[name](...args)); });
                 if (!PERF5_GLOW_LAYERS.has(name))
@@ -867,12 +828,6 @@ function directionReads(h) {
 const directionSnapshot = 'starDirections.map(({ cos, sin }) => ({ cos, sin }))';
 const descriptorSnapshot = '[stars, radialStreaks, aurora, filmGrain, orbitBlocks]';
 const futureRandom = 'Array.from({ length: 8 }, () => [rnd(), extraStarRandom()])';
-const scratchSnapshot = `Array.from({ length: miniFoldingBandPoints.segmentCount + 1 }, (_, i) => ({
-    left: [miniFoldingBandPoints.leftX[i], miniFoldingBandPoints.leftY[i]],
-    right: [miniFoldingBandPoints.rightX[i], miniFoldingBandPoints.rightY[i]],
-    front: miniFoldingBandPoints.front[i],
-}))`;
-
 function assertResourcesExact(h, r) {
     assert.equal(h.created.length, r.created.length, 'same offscreen canvas count');
     assert.equal(h.streams.size, r.streams.size, 'same context count');
@@ -966,56 +921,39 @@ test('processing C1: stars exactly replay the installed cached renderer, cold/wa
     assert.deepEqual([...coverage].sort(), ['hidden glints', 'visible glints']);
 });
 
-test('processing C1: warm 84-segment scratch geometry uses one dynamic cosine per point', () => {
+// L6 (odd/tasks/scenes-band-motion-contracts.md): CielScenes' rubber-band rings (a0db507..2246425) dropped the
+// C1 cached band trigonometry; the user accepted the loss. This pins the new cost so it cannot silently grow.
+test('processing band geometry: warm 84-segment scratch geometry costs 343 cosines and 343 sines', () => {
     const h = harness({ width: 1920, height: 1440 });
-    h.sandbox.miniFoldingBandGeometry(300, 200, 12, 0);
-    const { calls } = trigCalls(h, () => h.sandbox.miniFoldingBandGeometry(300, 200, 12, 0.61803));
-    assert.equal(calls.cos, 85, '85 points must reuse the compression cosine for front');
-    assert.equal(calls.sin, 85, 'one dynamic skew sine per point');
+    const [, , , , , deform] = h.sandbox.foldingBandParameters(0.37)[0];
+    h.sandbox.miniFoldingBandGeometry(300, 200, 12, 0, deform);
+    const { calls } = trigCalls(h, () => h.sandbox.miniFoldingBandGeometry(300, 200, 12, 0.61803, deform));
+    assert.equal(calls.cos, 343, '85 points x 4 cosines + 3');
+    assert.equal(calls.sin, 343, '85 points x 4 sines + 3');
 });
 
-test('processing C1: scratch coordinates and actual orbital painting exactly match reference geometry', () => {
-    for (const variant of ['mini', 'full']) for (const dpr of [1, 2]) {
-        const options = { variant, dpr, width: 1920, height: 1440, recordGradientStops: true };
-        const h = harness(options), r = harness({ ...options, arithmeticReference: true });
+test('processing band geometry: scratch arrays are reused and bounded; foldingBandGeometry is never called while drawing', () => {
+    for (const variant of ['mini', 'full']) {
+        const h = harness({ variant, width: 1920, height: 1440 });
+        h.tick(0);
         const buffers = h.evaluate('miniFoldingBandPoints');
         const identities = Object.values(buffers).filter(value => typeof value === 'object');
-        // 84 -> 48 -> 81 -> 84 segments; DPR-only and repeated draws retain angle/scratch buffers.
-        for (const dimensions of [null, [320, 200, dpr], [1920, 1080, dpr],
-            [1920, 1080, 1.5], [1920, 1440, dpr]]) {
-            if (dimensions) { h.resize(...dimensions); r.resize(...dimensions); }
-            for (const progress of [0, -0, -0.25, 0.0371, 0.61803, 1, 1.37]) {
+        for (const dimensions of [[320, 200, 1], [1920, 1080, 2], [1920, 1440, 1]]) {
+            h.resize(...dimensions);
+            for (const progress of [0, 0.0371, 0.61803, 1]) {
                 const args = [...centre(h), progress];
-                let actual, expected;
-                const allocations = h.callsTo(['foldingBandGeometry'], () => {
-                    actual = h.capture(() => h.sandbox.drawAtomicOrbits(...args));
-                });
-                const referenceAllocations = r.callsTo(['foldingBandGeometry'], () => {
-                    expected = r.capture(() => r.sandbox.drawAtomicOrbits(...args));
-                });
-                assert.equal(allocations.foldingBandGeometry, 0);
-                assert.equal(referenceAllocations.foldingBandGeometry, 3);
-                assertExact(actual, expected, `${variant}@${dpr} actual orbital renderer, p=${progress}`);
-                // Compare all five coordinate/front fields, not only coordinates reached by painting.
-                for (const [rx, ry, , width, phase] of h.sandbox.foldingBandParameters(progress)) {
-                    const points = h.sandbox.foldingBandGeometry(rx, ry, width, phase);
-                    assert.equal(h.sandbox.miniFoldingBandGeometry(rx, ry, width, phase), points.length);
-                    assertExact(h.evaluate(scratchSnapshot), points, 'all scratch points');
-                }
+                const calls = h.callsTo(['foldingBandGeometry'], () => h.capture(() => {
+                    h.sandbox.drawAtomicOrbits(...args);
+                    h.sandbox.drawAtomicOrbitsFront(...args);
+                }));
+                assert.equal(calls.foldingBandGeometry, 0, `${variant} p=${progress}`);
             }
         }
-        // Explicit signed-zero radii/width/phase protect Float64 storage and operation ordering.
-        const edgeArgs = [-0, -123.75, -0, -0];
-        const points = h.sandbox.foldingBandGeometry(...edgeArgs);
-        h.sandbox.miniFoldingBandGeometry(...edgeArgs);
-        assertExact(h.evaluate(scratchSnapshot), points, 'signed-zero geometry');
         Object.values(buffers).filter(value => typeof value === 'object').forEach((value, i) => {
             assert.equal(value, identities[i], 'scratch arrays are not replaced');
             assert.equal(value.length, 85, 'bounded scratch capacity');
         });
-        assertExact(h.evaluate(descriptorSnapshot), r.evaluate(descriptorSnapshot));
-        assertExact(h.evaluate(futureRandom), r.evaluate(futureRandom));
-        assertResourcesExact(h, r);
+        assert.deepEqual(h.errors, []);
     }
 });
 
@@ -1155,21 +1093,20 @@ test('processing wallpaper (B5): glow sprites are looked up without per-stamp st
     assert.equal(h.evaluate('miniGlowEntries.size') <= h.evaluate('glowCache.size'), true);
     const [cx2, cy2] = centre(h);
     for (const ms of [1234, 4567]) {
-        for (const [name, args] of [['drawSegmentedSphere', [cx2, cy2, progressAt(h, ms)]],
-            ['drawOrbitBlocks', [cx2, cy2, progressAt(h, ms) * Math.PI * 2]]]) {
-            const reference = h.reference(name, ...args);
-            // T1 (scene-wallpaper-scaling): 720 px short side, so the blocks carry scale(720 / 1080).
-            const expected = name === 'drawOrbitBlocks' ? withOrbitBlockScale(reference, wallpaperOrbitBlockScale(1280, 720)) : reference;
-            assert.deepEqual(json(h.capture(() => h.sandbox[name](...args))), json(expected), `${name} after resize`);
-        }
+        const args = [cx2, cy2, progressAt(h, ms)];
+        assert.deepEqual(json(h.capture(() => h.sandbox.drawSegmentedSphere(...args))),
+            json(h.reference('drawSegmentedSphere', ...args)), 'drawSegmentedSphere after resize');
     }
 });
 
-test('processing O2 changes are removable marked blocks over the CielWin reference', () => {
+test('processing O2 changes are removable marked blocks over the pinned reference', () => {
     const reference = {
         sphere: '0ae7e1443c5da47f92a0434adbd87bc1a7ef1a59a69f8f0a6bb55a1dc4788bf8',
         sprites: 'cd1c36857f4504393befb6c53b12e562d458f461860b1d366f4b24c9b5b0094b',
-        layers: '84cce57bef22a17d9a41f4f9b91cd7c7bfeaa0f485ed082a76643aa7f0c3a405',
+        // Re-pinned for CielScenes 87dfae5 (odd/tasks/scenes-band-motion-contracts.md); was the CielWin
+        // reference 84cce57bef22a17d9a41f4f9b91cd7c7bfeaa0f485ed082a76643aa7f0c3a405. The upstream band and
+        // orbit block rewrite is unmarked and calls O2 helpers, so stripped layers no longer runs alone.
+        layers: '18ed315fa660374cb90702313c4766a02516ee8e52ade9738bb9856d8d39d2f4',
     };
     for (const [name, hash] of Object.entries(reference)) {
         const source = read(`processing/js/${name}.js`);
@@ -1188,35 +1125,90 @@ const miniLayers = (h, ms) => {
         h.sandbox.drawSegmentedSphere(cx, cy, p);
         h.sandbox.drawAtomicOrbits(cx, cy, p);
         h.sandbox.drawOrbitBlocks(cx, cy, phase);
+        h.sandbox.drawAtomicOrbitsFront(cx, cy, p);
+        h.sandbox.drawPerspectiveRays(cx, cy, phase);
+    });
+};
+// The layers that still have a CielWin reference stream (the bands and orbit blocks were replaced upstream).
+const comparedLayers = (h, ms) => {
+    const [cx, cy] = centre(h), p = progressAt(h, ms), phase = p * Math.PI * 2;
+    return h.capture(() => {
+        h.sandbox.drawSegmentedSphere(cx, cy, p);
         h.sandbox.drawPerspectiveRays(cx, cy, phase);
     });
 };
 const referenceLayersAt = (h, ms) => {
     const [cx, cy] = centre(h), p = progressAt(h, ms), phase = p * Math.PI * 2;
-    return [['drawSegmentedSphere', p], ['drawAtomicOrbits', p], ['drawOrbitBlocks', phase],
-        ['drawPerspectiveRays', phase]]
-        .flatMap(([name, t]) => o2bExpected(name, h.reference(name, cx, cy, t), false));
+    return [['drawSegmentedSphere', p], ['drawPerspectiveRays', phase]]
+        .flatMap(([name, t]) => h.reference(name, cx, cy, t));
 };
 const isRgbaSet = op => op[0].startsWith('=') && typeof op[1] === 'string' && op[1].startsWith('rgba(');
 
-test('processing mini O2b: each folding band fills its quads as one path (3 fills per frame, was 144)', () => {
+// Band segment counts and near segments at progress p, read back from the scratch geometry.
+const bandLayout = (h, p) => h.sandbox.foldingBandParameters(p).map(([rx, ry, , width, foldPhase, deform]) => {
+    const points = h.sandbox.miniFoldingBandGeometry(rx, ry, width, foldPhase, deform);
+    const depth = h.evaluate('miniFoldingBandPoints.depth');
+    let near = 0;
+    for (let i = 0; i < points - 1; i++) if (depth[i] + depth[i + 1] > 0) near++;
+    return { segments: points - 1, near };
+});
+
+test('processing mini O2b: each band fills its quads as one path in the back pass', () => {
     for (const dpr of [1, 2]) {
         const h = harness({ dpr });
         h.tick(0);
         for (const ms of TIMESTAMPS) {
             const args = [...centre(h), progressAt(h, ms)];
-            const reference = h.reference('drawAtomicOrbits', ...args);
+            const layout = bandLayout(h, args[2]);
             const ops = h.capture(() => h.sandbox.drawAtomicOrbits(...args));
-            assert.equal(count(reference, 'fill'), 144);
-            assert.equal(count(ops, 'fill'), 3, `fills at ${ms}`);
-            assert.equal(count(ops, 'stroke'), count(reference, 'stroke'), 'every edge stroke and outline kept');
-            assert.equal(count(ops, 'beginPath'), count(reference, 'beginPath') - 141);
+            assert.equal(layout.length, 2, 'two rubber-band rings');
+            assert.equal(count(ops, 'fill'), layout.length, `one fill per band at ${ms}`);
+            assert.equal(count(ops, 'stroke'), layout.reduce((sum, band) => sum + band.segments + 1, 0),
+                'every edge stroke and the outline kept');
             const fills = flatten(ops).filter(paint => paint.name === 'fill');
-            for (const paint of fills) {
-                assert.equal(paint.path.filter(op => op[0] === 'moveTo').length, 48);
-                assert.equal(paint.path.filter(op => op[0] === 'closePath').length, 48);
+            fills.forEach((paint, i) => {
+                assert.equal(paint.path.filter(op => op[0] === 'moveTo').length, layout[i].segments);
+                assert.equal(paint.path.filter(op => op[0] === 'closePath').length, layout[i].segments);
                 assert.deepEqual([paint.style, paint.composite, paint.alpha, paint.shadow], ['rgb(255,255,255)', 'source-over', 1, null]);
-            }
+            });
+        }
+        assert.deepEqual(h.errors, []);
+    }
+});
+
+// L6 (odd/tasks/scenes-band-motion-contracts.md): the front pass (drawAtomicOrbitsFront, a0db507) fills one
+// seam cover plus each near quad on its own, also in mini; the user accepted this O2b loss.
+test('processing mini: the front pass fills one seam cover plus each near quad', () => {
+    const h = harness();
+    h.tick(0);
+    let seen = 0;
+    for (const ms of TIMESTAMPS) {
+        const args = [...centre(h), progressAt(h, ms)];
+        const layout = bandLayout(h, args[2]);
+        const ops = h.capture(() => h.sandbox.drawAtomicOrbitsFront(...args));
+        const expected = layout.reduce((sum, band) => sum + (band.near ? 1 + band.near : 0), 0);
+        assert.equal(count(ops, 'fill'), expected, `front fills at ${ms}`);
+        seen += expected;
+    }
+    assert.ok(seen > 0, 'some timestamp draws a near half');
+    assert.deepEqual(h.errors, []);
+});
+
+// CielScenes 26b000e: one flat orbit of ORBIT_BLOCK_COUNT tilted squares, one colour, no depth.
+test('processing orbit blocks: one colour set, then one glow stamp and one 4-point fill per block', () => {
+    for (const variant of ['mini', 'full']) for (const [width, height] of [[240, 240], [1920, 1080], [800, 450]]) {
+        const h = harness({ variant, width, height });
+        h.tick(0);
+        const blocks = h.evaluate('ORBIT_BLOCK_COUNT');
+        assert.equal(blocks, 24);
+        for (const ms of [1234, 9999]) {
+            const ops = h.capture(() => h.sandbox.drawOrbitBlocks(...centre(h), progressAt(h, ms) * Math.PI * 2));
+            assert.deepEqual(ops.filter(op => op[0] === '=fillStyle').map(op => op[1]), ['rgba(255,252,238,0.7)']);
+            assert.equal(count(ops, 'drawImage'), blocks, 'one glow stamp per block');
+            assert.deepEqual(['beginPath', 'moveTo', 'lineTo', 'closePath', 'fill'].map(name => count(ops, name)),
+                [blocks, blocks, 3 * blocks, blocks, blocks]);
+            for (const paint of flatten(ops).filter(paint => paint.name === 'fill'))
+                assert.deepEqual([paint.style, paint.alpha, paint.shadow], ['rgba(255,252,238,0.7)', 1, null]);
         }
         assert.deepEqual(h.errors, []);
     }
@@ -1230,18 +1222,19 @@ test('processing mini O2b: rgba colours are built once per (colour, 0.001 alpha 
     h.sandbox.miniRgbaString = (...args) => { const value = build(...args); built.push(value); return value; };
     for (let k = 0; k < 120; k++) {
         const ms = 37 + k * 251;
-        const sets = miniLayers(h, ms).filter(isRgbaSet);
         // The reference builds one template string per dynamic colour set; mini sets the same colours.
-        assert.equal(sets.length, referenceLayersAt(h, ms).filter(isRgbaSet).length);
-        // 144 band edges + 70 sphere fills/strokes + 32 orbit blocks + 1 ray stroke, plus constant literals.
-        assert.ok(sets.length >= 247, `rgba sets at ${ms}`);
+        assert.equal(comparedLayers(h, ms).filter(isRgbaSet).length, referenceLayersAt(h, ms).filter(isRgbaSet).length);
+        const sets = miniLayers(h, ms).filter(isRgbaSet);
+        // 2 bands x 48 edges (back pass) + 70 sphere fills/strokes + 1 orbit block fill + 1 ray stroke,
+        // plus constant literals.
+        assert.ok(sets.length >= 168, `rgba sets at ${ms}`);
         const before = built.length;
         miniLayers(h, ms);
         assert.equal(built.length, before, `a repeated frame builds no colour string (${ms})`);
     }
     assert.ok(built.length > 0);
     assert.equal(new Set(built).size, built.length, 'no colour string is ever built twice');
-    assert.ok(built.length < 120 * 247 / 10, `${built.length} strings built over 120 frames`);
+    assert.ok(built.length < 120 * 168 / 10, `${built.length} strings built over 120 frames`);
     h.sandbox.miniRgbaString = build;
     assert.deepEqual(h.errors, []);
 });
@@ -1260,7 +1253,7 @@ test('processing mini O2b: quantized alphas stay within 0.0005 of the exact alph
     }
     let maxError = 0, changed = 0;
     for (const ms of TIMESTAMPS) {
-        const ops = miniLayers(h, ms), exact = referenceLayersAt(h, ms);
+        const ops = comparedLayers(h, ms), exact = referenceLayersAt(h, ms);
         assert.equal(ops.length, exact.length);
         ops.forEach((op, i) => {
             if (JSON.stringify(op) === JSON.stringify(exact[i])) return;

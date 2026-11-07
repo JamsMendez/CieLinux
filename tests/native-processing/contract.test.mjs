@@ -122,7 +122,7 @@ for (const [name, change, reason] of [
 
 const stages = ['renderNebula', 'ensureSprites', 'drawSoftOvalFields', 'drawStars',
     'drawRadialStreaks', 'drawLensFlares', 'drawChromaticSideLoops', 'drawSegmentedSphere',
-    'drawAtomicOrbits', 'drawOrbitBlocks', 'drawCentralOctagon', 'drawTriangularPrism',
+    'drawAtomicOrbits', 'drawOrbitBlocks', 'drawCentralOctagon', 'drawTriangularPrism', 'drawAtomicOrbitsFront',
     'drawPerspectiveRays', 'drawCentralCore', 'drawFilmGrain', 'drawVignette', 'renderAlertOverlay'];
 const marker = 'CIELINUX_NATIVE_PROCESSING_ATTRIBUTION_READY_V1';
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -135,6 +135,8 @@ function attributionHarness(customRender) {
     Object.assign(sandbox, {
         location: { search: '', hash: '' }, URLSearchParams,
         W: 3440, H: 1440, viewZoom: 1, TAU: Math.PI * 2,
+        // config.js constants main.js's sceneViewZoom reads (CielScenes 90e262d).
+        OCTAGON_RADIUS_FACTOR: 0.168, RAPHAEL_GLYPH_SYSTEM_OUTER_MARGIN_PX: 50, RAPHAEL_GLYPH_RING_BLUE_OUTER_FACTOR: 2.35,
         ONE_WAY_DURATION: 300, ANIMATION_CYCLE_DURATION: 30,
         OCTAGON_PULSE_DURATION: 1, OCTAGON_PULSE_INTERVAL: 3,
         pingpong01: x => x, alertSceneMs: x => x, initializeNebulaRenderer() {},
@@ -200,7 +202,7 @@ test('attribution excludes queued original callback, discards 30 draws and caps 
             assert.ok(Math.abs(stage[key] - 1.01) < 1e-8, `${stage.name}.${key}`);
         }
     }
-    assert.equal(result.attribution.clock.reads, 5400);
+    assert.equal(result.attribution.clock.reads, 5700);
     assert.equal(result.attribution.clock.residualToleranceMs, 0);
     assert.ok(result.attribution.residual.meanMs > 0);
     const afterCap = h.clockReads();
