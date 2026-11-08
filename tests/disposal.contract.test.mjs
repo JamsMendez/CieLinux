@@ -129,7 +129,9 @@ for (const [scenario, result] of [['ambient-quit', 0], ['fail-ambient-quit', 1]]
 test('production close routes and pre-exec failure use the actual owner', () => {
     const cpp = readFileSync(source('main.cpp'), 'utf8');
     assert.match(cpp, /app\.setQuitOnLastWindowClosed\(false\)/);
-    assert.match(cpp, /&QQuickWindow::closing, &policy,\s*\[&, generation\] \{\s*if \(policy.admits\(generation\)\) policy.noteCloseReason\(Diagnostics::Reason::Dismissal\);\s*policy.closeGeneration\(generation\);\s*\}/);
+    // Dismissal of the current window closes its current generation (same-mode switches reuse
+    // the window); a retiring window's dismissal is stale and ignored.
+    assert.match(cpp, /&QQuickWindow::closing, &policy,\s*\[&, window = &view\] \{\s*if \(attachment\.view\.get\(\) != window\) return;\s*const int generation = policy\.generation\(\);\s*if \(policy.admits\(generation\)\) policy.noteCloseReason\(Diagnostics::Reason::Dismissal\);\s*policy.closeGeneration\(generation\);\s*\}/);
     assert.doesNotMatch(cpp, /view\.close\(/);
     assert.match(cpp, /&QTimer::timeout, &policy, \[&\] \{\s*policy.noteCloseReason\(Diagnostics::Reason::Deadline\);\s*policy.closeNormally\(\);\s*\}/);
     assert.match(cpp, /if \(view\.status\(\) != QQuickView::Ready\) \{ policy\.constructionFailed\(generation\); return 1; \}/);
