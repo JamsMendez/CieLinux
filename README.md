@@ -142,7 +142,7 @@ tray-host restarts. Re-selecting the current rate does nothing.
 - `frame-rate = 30` is the default; `60` is the only other accepted value.
 - This is one global preference, not a per-scene or per-mode setting. Scene and
   wallpaper/mini switches keep it; no HTTP route or CLI flag changes it.
-- Changing the rate rebuilds the page and may reset its animation. Active alerts
+- Changing the rate loads the page again and may reset its animation. Active alerts
   continue for their remaining duration without another sound, and fullscreen
   wallpaper pause is preserved.
 - The selected rate is saved only after the replacement page confirms readiness.
@@ -275,12 +275,21 @@ second sound. The default stays `scene-mini` (CielWin defaults to `scene`).
 Every live switch (scene, mode or frame rate) crossfades, so the desktop never shows
 between two pages:
 
-- The page being replaced stays on screen while the new one is built under a fully
-  transparent root.
+- The page being replaced stays on screen while the new one loads, fully transparent,
+  over it.
 - The new page fades in over 300 ms once it has loaded and drawn its first frame. If it
   never reports that frame, it fades in after 2 s anyway.
-- The old page is destroyed only once the fade has finished. A second switch during the
-  fade keeps the fully drawn page and drops the one that was fading in.
+- The old page stops only once the fade has finished. A second switch during the fade
+  keeps the fully drawn page and drops the one that was fading in.
+
+Each mode has one window holding two persistent scene slots (ping-pong). A switch that
+keeps the mode (scene or frame rate) loads the new page into the slot that is not on
+screen and crossfades inside the window; the covered slot is then parked: its web view
+is hidden, so it stops rendering, and it is reused by the next switch. No window, web
+profile or web view is created or destroyed after start, because doing that on every
+switch deadlocks Qt WebEngine's compositor after a few hundred switches. Only a mode
+switch builds a new window (its size and layer differ) and destroys the old one after
+the fade.
 
 > **Note (Hyprland):** the compositor's own layer animations (Omarchy enables
 > `layersOut` with a fade) redraw the destroyed page fading out *on top of* the new one,
@@ -345,7 +354,7 @@ cursor (`j/cursorpos`) every 100 ms while the mini window is shown, one request 
 time (a tick is skipped while an answer is still due), asynchronously, never logged. The
 answer is in Hyprland's global layout and is mapped onto the output with the monitor's
 `x`/`y` from the cached `j/monitors` answer. The polling stops with the mini (mode switch,
-rebuild, exit).
+exit); a scene or rate switch keeps the same window, so it keeps polling.
 
 | Situation | Behaviour |
 | --- | --- |
@@ -748,9 +757,9 @@ scene or mode switch and every renderer recovery. Fields not listed are `0`.
 | `renderer_pid` | The renderer process for this generation. | process ID | | |
 | `terminated` | The renderer process ended. | Qt termination status: 0 normal, 1 abnormal, 2 crashed, 3 killed | exit code | |
 | `incident` | A load failure or renderer exit. | generation after it (one higher when a recovery starts, unchanged when the host gives up) | recoveries used | 0 load failed, 1 renderer ended |
-| `prepared` | The window and page for this generation were built. | | | |
-| `mapped` | That window was shown. | | | |
-| `view_retired`, `profile_retired` | The old window or web profile was destroyed. | build stage reached: 1 profile, 2 window, 3 prepared, 4 shown | | |
+| `prepared` | The page for this generation was set up: a new window at start and on a mode switch, a reused scene slot of the current window otherwise. | | | |
+| `mapped` | That window or slot was shown. | | | |
+| `view_retired`, `profile_retired` | The old window or web profile was destroyed (only on a mode switch or at exit; `gen` is the last generation it showed). | build stage reached: 1 profile, 2 window, 3 prepared, 4 shown | | |
 | `terminal` | The host is closing. | exit status | close reason | |
 
 The `terminal` close reason is an index: 0 Normal (tray **Exit**, SIGTERM or SIGINT),

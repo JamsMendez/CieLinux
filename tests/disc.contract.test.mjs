@@ -12,7 +12,8 @@ const read = name => readFileSync(source(name), 'utf8');
 // Evaluates the host-owned scene -> disc mapping exactly as written in view.qml.
 function discFor() {
     const qml = read('view.qml');
-    const match = qml.match(/function discFor\(name, w, h\) \{[\s\S]*?\n    \}/);
+    // The function sits in the scene slot component; its body ends at its own indentation.
+    const match = qml.match(/^( *)function discFor\(name, w, h\) \{[\s\S]*?\n\1\}/m);
     assert.ok(match, 'view.qml declares function discFor(name, w, h)');
     return new Function(`${match[0]}; return discFor;`)();
 }

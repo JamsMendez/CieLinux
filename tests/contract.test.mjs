@@ -80,7 +80,12 @@ test('typed root contract uses generated uncreatable native metadata, not contex
     assert.match(qml, /profile: sceneRoot\.sceneProfile/);
     assert.match(qml, /url: sceneRoot\.sceneUrl/);
     assert.match(qml, /!sceneRoot\.scenePolicy\.allowed\(request.url\)/);
-    assert.match(qml, /if \(info.status === WebEngineView.LoadFailedStatus\)\s*sceneRoot.scenePolicy.incident\(sceneRoot.sceneAttachment.generation, 0\)/);
+    // Only a failure of the selected page is an incident (a reused slot view also ends superseded loads).
+    assert.match(qml, /if \(info.status === WebEngineView.LoadFailedStatus && sceneRoot\.scenePolicy\.allowed\(info\.url\)\)\s*sceneRoot.scenePolicy.incident\(sceneRoot.sceneAttachment.generation, 0\)/);
+    // The window root and each scene slot declare their typed host objects.
+    assert.match(qml, /^    id: sceneWindow$/m);
+    for (const name of ['sceneProfile', 'scenePolicy', 'sceneAlerts', 'sceneMode', 'sceneAttachment', 'sceneUrl', 'sceneName'])
+        assert.equal((qml.match(new RegExp(`required property \\w+ ${name}$`, 'gm')) || []).length, 2, name);
     assert.match(qml, /onRenderProcessTerminated: function\(status, code\) \{\s*sceneRoot.scenePolicy.rendererTerminatedFor\(sceneRoot.sceneAttachment.generation,\s*status, code\)/);
     assert.match(policy, /rendererTerminatedFor\(int generation, int status, int code\)[\s\S]*?incident\(generation, 1\)/);
     assert.match(qml, /required property SceneAttachment sceneAttachment/);

@@ -39,29 +39,41 @@ struct FakeView {
 void queuedScenario(int scenario) {
  Policy policy(QUrl("qrc:/processing/index.html?variant=mini&fps=30"));
  struct { std::unique_ptr<FakeView> view = std::make_unique<FakeView>(); int stage = 0; } attachment;
- // Crossfade fakes: the current token, the retiring slot and the reveal deadline.
- struct FakeToken { bool on = true; bool revealed() const { return on; } } token;
- if (scenario == 7) token.on = false; // The replaced page never revealed: nothing to keep.
- FakeToken *currentToken = &token;
+ // Crossfade fakes: what the window shows, the retiring window and the reveal deadline.
+ bool revealed = true, predecessorSlotLive = false;
+ if (scenario == 7) revealed = false; // The replaced page never revealed: nothing to keep.
+ // Scenario 13: a mode switch while a same-mode page fades in keeps the window (its predecessor slot is drawn).
+ if (scenario == 13) { revealed = false; predecessorSlotLive = true; }
+ auto windowShowsPage = [&] { return revealed || predecessorSlotLive; };
  int handOvers = 0;
  auto handOver = [&] { ++handOvers; };
  struct { std::unique_ptr<FakeView> view; } retiring;
- if (scenario == 8) retiring.view = std::make_unique<FakeView>();
+ if (scenario == 8 || scenario == 9) retiring.view = std::make_unique<FakeView>();
  struct { int started = 0; void start(int) { ++started; } } revealDeadline;
- // Scenario 9: a switch during the fade keeps the fully drawn predecessor (no hand-over).
+ // Scenario 9: a switch during the fade over a retiring window keeps that predecessor (no hand-over).
+ // Scenario 14: during a fade between two slots the window itself shows the drawn page: hand it over.
  struct { bool active = false; bool isActive() const { return active; } void stop() { active = false; } } retireTimer;
- if (scenario == 9) retireTimer.active = true;
+ if (scenario == 9 || scenario == 14) retireTimer.active = true;
+ // Scenarios 10-12 keep the mode: the window's persistent slots take the generation (ping-pong).
+ QString windowMode = QStringLiteral("scene-mini");
+ struct { QString current = QStringLiteral("scene"); QString mode() const { return current; } } sceneHost;
+ if (scenario >= 10 && scenario <= 12) sceneHost.current = windowMode;
+ int navigations = 0;
+ auto navigateSlot = [&](int generation) {
+  ++navigations; assert(policy.admits(generation));
+  if (scenario == 12) throw 1;
+ };
  constexpr int revealDeadlineMs = 2000;
  int preparations = 0;
  auto prepareAttachment = [&](int generation) {
   ++preparations; assert(policy.admits(generation));
   if (scenario == 3) { policy.closeNormally(); return 0; }
   if (scenario == 4) throw 1; // Native allocation/construction exception.
-  if (scenario == 6) attachment.view = std::make_unique<FakeView>();
+  if (scenario == 6 || scenario == 11) attachment.view = std::make_unique<FakeView>();
   return scenario == 2 ? 1 : 0;
  };
  if (scenario == 5) attachment.view->onHide = [&] { policy.closeNormally(); };
- if (scenario == 6) attachment.view.reset(); // Initial construction can report before a view is available.
+ if (scenario == 6 || scenario == 11) attachment.view.reset(); // Initial construction can report before a view is available.
  ${nativeQueue || ''}
  policy.incident(1, 0);
  if (scenario == 1) policy.closeNormally();
@@ -79,6 +91,12 @@ void queuedScenario(int scenario) {
  if (scenario == 7) assert(preparations == 1 && attachment.view->shows == 1 && !policy.closed());
  if (scenario == 8) assert(preparations == 1 && attachment.view->shows == 1 && revealDeadline.started == 1);
  if (scenario == 9) assert(handOvers == 0 && !retireTimer.active && preparations == 1 && attachment.view->shows == 1);
+ // Same mode: no hand-over, no window build, no show; a failure is a construction failure.
+ if (scenario == 10) assert(navigations == 1 && preparations == 0 && handOvers == 0 && attachment.view->shows == 0 && !policy.closed());
+ if (scenario == 11) assert(navigations == 0 && preparations == 1 && attachment.view->shows == 1 && !policy.closed());
+ if (scenario == 12) assert(navigations == 1 && preparations == 0 && policy.terminalResult() == 1);
+ if (scenario == 13 || scenario == 14) assert(handOvers == 1 && preparations == 1 && attachment.view->shows == 1);
+ if (scenario != 10 && scenario != 12) assert(navigations == 0);
  policy.closeNormally();
 }
 void load(Policy &p, int g) { p.loadSucceededFor(g, QUrl("qrc:/processing/index.html?variant=mini&fps=30")); }
@@ -203,7 +221,7 @@ int main(int argc, char **argv) {
    fading.reveal(); fading.reveal();
    assert(fading.revealed() && changes == 1 && fading.generation() == 2);
   }
-  for (int scenario = 0; scenario < 10; ++scenario) queuedScenario(scenario);
+  for (int scenario = 0; scenario < 15; ++scenario) queuedScenario(scenario);
   std::puts("GENERATION_CONTRACT_PASS");
   QCoreApplication::exit(0);
  });
@@ -398,7 +416,7 @@ test('production configures the rolling recovery budget only for resident hosts'
 test('actual QML snapshots use the getter and immutable attachment without changing load admission', () => {
     const qml = readFileSync(source('view.qml'), 'utf8');
     assert.match(qml, /Component\.onCompleted: \{\s*sceneRoot\.scenePolicy\.rendererPidFor\(sceneRoot\.sceneAttachment\.generation,\s*renderProcessPid\)\s*\}/);
-    assert.match(qml, /onLoadingChanged: function\(info\) \{\s*if \(info.status === WebEngineView.LoadSucceededStatus\) \{\s*sceneRoot\.scenePolicy\.loadSucceededFor\(sceneRoot\.sceneAttachment\.generation, info.url\)\s*if \(sceneRoot\.scenePolicy\.allowed\(info.url\)\)\s*sceneRoot\.scenePolicy\.rendererPidFor\(sceneRoot\.sceneAttachment\.generation,\s*renderProcessPid\)\s*\}\s*if \(info.status === WebEngineView.LoadFailedStatus\)\s*sceneRoot\.scenePolicy\.incident\(sceneRoot\.sceneAttachment\.generation, 0\)/);
+    assert.match(qml, /onLoadingChanged: function\(info\) \{\s*if \(info.status === WebEngineView.LoadSucceededStatus\) \{\s*sceneRoot\.scenePolicy\.loadSucceededFor\(sceneRoot\.sceneAttachment\.generation, info.url\)\s*if \(sceneRoot\.scenePolicy\.allowed\(info.url\)\)\s*sceneRoot\.scenePolicy\.rendererPidFor\(sceneRoot\.sceneAttachment\.generation,\s*renderProcessPid\)\s*\}\s*if \(info.status === WebEngineView.LoadFailedStatus && sceneRoot\.scenePolicy\.allowed\(info\.url\)\)\s*sceneRoot\.scenePolicy\.incident\(sceneRoot\.sceneAttachment\.generation, 0\)/);
     assert.match(qml, /onRenderProcessPidChanged: \{\s*sceneRoot\.scenePolicy\.rendererPidFor\(sceneRoot\.sceneAttachment\.generation,\s*renderProcessPid\)\s*\}/);
     assert.equal((qml.match(/\.rendererPidFor\(/g) || []).length, 3);
     assert.doesNotMatch(qml, /Timer\s*\{|onReadyChanged|Qt\.callLater|setInterval/);
@@ -438,11 +456,12 @@ test('synthetic Node VM executes actual QML loading handler routing, not WebEngi
                 const expected = status === WebEngineView.LoadSucceededStatus
                     ? [['load', generation, url], ['allowed', url],
                         ...(url === selected ? [['pid', generation, 731]] : [])]
-                    : status === WebEngineView.LoadFailedStatus ? [['incident', generation, 0]] : [];
+                    : status === WebEngineView.LoadFailedStatus
+                        ? [['allowed', url], ...(url === selected ? [['incident', generation, 0]] : [])] : [];
                 assert.deepEqual(calls, expected, `generation=${generation}, status=${status}, url=${url}`);
                 assert.equal(sceneAttachment.generation, generation);
-                // Failed loads currently ignore URL admission; this pins a fact,
-                // not a demonstrated defect. Policy stale rejection is tested separately.
+                // A reused slot view reports the end of a superseded load (another URL): only a
+                // failure of the selected page is an incident. Policy stale rejection is tested separately.
             }
         }
     }
@@ -489,8 +508,9 @@ test('one actually-used fresh construction path preserves lifetime wiring', () =
     assert.match(cpp, /configureLifetime\(lifetime, options\);[\s\S]*if \(policy.admits\(initialGeneration\) && attachment.view\) \{\s*attachment.view->show\(\);[\s\S]*app\.exec\(\);\s*watchdog\.stop\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);/);
     assert.match(cpp, /QTimer::singleShot\(0, &policy, \[&, generation\] \{\s*if \(!policy\.admits\(generation\)\) return;[\s\S]*?replacementResult = prepareAttachment\(generation\);[\s\S]*?if \(!policy\.admits\(generation\)\) return;/);
     assert.match(cpp, /catch \(\.\.\.\) \{\s*policy\.constructionFailed\(generation\);\s*return;/);
-    assert.match(cpp, /\[&, generation\] \{\s*if \(policy.admits\(generation\)\) policy.noteCloseReason\(Diagnostics::Reason::Dismissal\);\s*policy.closeGeneration\(generation\);\s*\}/);
-    assert.match(cpp, /auto \*token = new AttachmentToken\(generation, !fadeIn, &view\);\s*currentToken = token;/);
+    // The current window carries every same-mode generation, so dismissal closes the current one.
+    assert.match(cpp, /\[&, window = &view\] \{\s*if \(attachment\.view\.get\(\) != window\) return;\s*const int generation = policy\.generation\(\);\s*if \(policy.admits\(generation\)\) policy.noteCloseReason\(Diagnostics::Reason::Dismissal\);\s*policy.closeGeneration\(generation\);\s*\}/);
+    assert.match(cpp, /auto \*token = new AttachmentToken\(generation, !fadeIn, &view\);[\s\S]*?sceneSlots\.token\[0\] = token;/);
     assert.match(cpp, /QStringLiteral\("sceneAttachment"\), QVariant::fromValue\(token\)/);
     assert.equal((cpp.match(/configureLifetime\(lifetime, options\)/g) || []).length, 1);
     assert.equal((cpp.match(/lifetime\.start\(/g) || []).length, 0);

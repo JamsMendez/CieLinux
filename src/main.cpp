@@ -20,6 +20,7 @@
 #include <QPointer>
 #include <QVariantMap>
 #include <QElapsedTimer>
+#include <QQuickItem>
 #include <QQuickView>
 #include <QColor>
 #include <QScreen>
@@ -433,17 +434,39 @@ int main(int argc, char **argv) {
         }
     } attachment;
     attachment.diagnostics = &policy.lifecycleDiagnostics();
-    // Crossfade on replacement: the attachment being replaced stays mapped (never shown again,
+    // Crossfade on a mode switch: the window being replaced stays mapped (never shown again,
     // only retired) until its successor has drawn and faded in, so a switch never uncovers the
     // desktop between the two pages. At most one predecessor is kept.
     Attachment retiring;
     retiring.diagnostics = &policy.lifecycleDiagnostics();
-    QPointer<AttachmentToken> currentToken; // The current attachment's token (its view owns it).
+    QString windowMode;                     // The mode the current window was built for.
     constexpr int crossfadeMs = 300;        // Mirrors the opacity Behavior in view.qml.
     constexpr int revealDeadlineMs = 2000;  // A page that never reports its first frame still shows.
     QTimer revealDeadline, retireTimer;
     revealDeadline.setSingleShot(true);
     retireTimer.setSingleShot(true);
+    // Ping-pong: the current window holds two persistent scene slots (view.qml). A same-mode
+    // switch loads the new page into one of them and crossfades inside the window; nothing is
+    // built or destroyed, which keeps Qt WebEngine's compositor out of its create/destroy deadlock.
+    struct {
+        QPointer<AttachmentToken> token[2]; // Each slot's own generation identity (the view owns it).
+        bool live[2] = {false, false};      // Rendering: on screen, or fading in.
+        int current = 0;                    // The slot holding the current generation.
+        AttachmentToken *currentToken() const { return token[current]; }
+        int other() const { return 1 - current; }
+    } sceneSlots;
+    // A drawn page is on screen: the current slot was revealed, or its predecessor is still live.
+    auto windowShowsPage = [&] {
+        AttachmentToken *current = sceneSlots.currentToken();
+        return (current && current->revealed()) || sceneSlots.live[sceneSlots.other()];
+    };
+    // After a crossfade inside the window, the covered slot stops rendering (it keeps its page).
+    auto parkCovered = [&] {
+        const int covered = sceneSlots.other();
+        if (!attachment.view || !sceneSlots.live[covered]) return;
+        sceneSlots.live[covered] = false;
+        QMetaObject::invokeMethod(attachment.view->rootObject(), "park", Q_ARG(QVariant, covered));
+    };
     // Moves the current attachment into the retiring slot; the previous predecessor goes first.
     auto handOver = [&] {
         retireTimer.stop();
@@ -458,11 +481,18 @@ int main(int argc, char **argv) {
         revealDeadline.stop();
         // A deadline can fire between a retarget and its queued rebuild: never reveal a page
         // that is already being replaced.
-        if (!currentToken || currentToken->revealed() || !policy.admits(currentToken->generation())) return;
-        currentToken->reveal();
-        if (retiring.view) retireTimer.start(crossfadeMs + 100);
+        AttachmentToken *current = sceneSlots.currentToken();
+        if (!current || current->revealed() || !policy.admits(current->generation())) return;
+        current->reveal();
+        // Whatever the new page covers (a predecessor window or slot) retires after the fade.
+        if (retiring.view || sceneSlots.live[sceneSlots.other()]) retireTimer.start(crossfadeMs + 100);
     };
-    QObject::connect(&retireTimer, &QTimer::timeout, &policy, [&] { retiring.reset(); });
+    QObject::connect(&retireTimer, &QTimer::timeout, &policy, [&] {
+        retiring.reset();
+        parkCovered();
+        // A wallpaper window built transparent to fade over its predecessor is opaque from now on.
+        if (attachment.view && windowMode == QStringLiteral("scene")) attachment.view->setColor(QColor(Qt::black));
+    });
     QObject::connect(&revealDeadline, &QTimer::timeout, &policy, revealCurrent);
     QObject::connect(&policy, &Policy::readyChanged, &policy, [&] {
         if (policy.ready()) revealCurrent();
@@ -511,8 +541,11 @@ int main(int argc, char **argv) {
         attachment.view = std::make_unique<QQuickView>();
         attachment.stage = 2;
         auto &view = *attachment.view;
+        // The current window carries every same-mode generation; a retiring one is stale.
         attachment.closingConnection = QObject::connect(&view, &QQuickWindow::closing, &policy,
-                         [&, generation] {
+                         [&, window = &view] {
+            if (attachment.view.get() != window) return;
+            const int generation = policy.generation();
             if (policy.admits(generation)) policy.noteCloseReason(Diagnostics::Reason::Dismissal);
             policy.closeGeneration(generation);
         });
@@ -561,7 +594,14 @@ int main(int argc, char **argv) {
         layer->setScreen(screen);
         layer->setCloseOnDismissed(true);
         auto *token = new AttachmentToken(generation, !fadeIn, &view);
-        currentToken = token;
+        // The second slot stays parked with generation 0, which the policy never admits.
+        auto *idle = new AttachmentToken(0, false, &view);
+        sceneSlots.token[0] = token;
+        sceneSlots.token[1] = idle;
+        sceneSlots.live[0] = true;
+        sceneSlots.live[1] = false;
+        sceneSlots.current = 0;
+        windowMode = sceneHost.mode();
         view.setInitialProperties(QVariantMap{
             {QStringLiteral("sceneProfile"), QVariant::fromValue(&profile)},
             {QStringLiteral("scenePolicy"), QVariant::fromValue(&policy)},
@@ -569,7 +609,8 @@ int main(int argc, char **argv) {
             {QStringLiteral("sceneName"), scene},
             {QStringLiteral("sceneMode"), sceneHost.mode()},
             {QStringLiteral("sceneAlerts"), QVariant::fromValue(&alertBridge)},
-            {QStringLiteral("sceneAttachment"), QVariant::fromValue(token)}
+            {QStringLiteral("sceneAttachment"), QVariant::fromValue(token)},
+            {QStringLiteral("sceneIdleAttachment"), QVariant::fromValue(idle)}
         });
         view.setSource(QUrl(QStringLiteral("qrc:/view.qml")));
         if (view.status() != QQuickView::Ready) { policy.constructionFailed(generation); return 1; }
@@ -577,18 +618,54 @@ int main(int argc, char **argv) {
         policy.lifecycleDiagnostics().record(Diagnostics::Event::Prepared, generation);
         return 0;
     };
+    // Same-mode switch (scene, frame rate, or incident recovery): the new generation goes into a
+    // persistent slot of the current window. Keep whatever is on screen: a revealed current slot
+    // becomes the predecessor and the other slot is reused; a slot still hidden never showed and
+    // is simply re-navigated. Mid-fade the predecessor is the only fully drawn page: keep it, and
+    // reuse the fading slot.
+    auto navigateSlot = [&](int generation) {
+        int target = sceneSlots.current;
+        if (retireTimer.isActive()) retireTimer.stop();
+        else if (AttachmentToken *current = sceneSlots.currentToken(); current && current->revealed())
+            target = sceneSlots.other();
+        alertBridge.attach(generation); // the new page is not alert-ready until it says so
+        auto *token = new AttachmentToken(generation, false, attachment.view.get());
+        QPointer<AttachmentToken> replaced = sceneSlots.token[target];
+        sceneSlots.token[target] = token;
+        sceneSlots.live[target] = true;
+        sceneSlots.current = target;
+        attachment.generation = generation; // Retirement records name the last generation shown.
+        const bool navigated = QMetaObject::invokeMethod(attachment.view->rootObject(), "navigate",
+            Q_ARG(QVariant, target), Q_ARG(QVariant, QVariant::fromValue(token)),
+            Q_ARG(QVariant, QVariant(sceneHost.url())), Q_ARG(QVariant, QVariant(sceneHost.scene())));
+        if (replaced) replaced->deleteLater(); // QML now holds the new token only.
+        if (!policy.admits(generation)) return;
+        if (!navigated) { policy.constructionFailed(generation); return; }
+        policy.lifecycleDiagnostics().record(Diagnostics::Event::Prepared, generation);
+        policy.lifecycleDiagnostics().record(Diagnostics::Event::Mapped, generation);
+        revealDeadline.start(revealDeadlineMs);
+    };
     policy.bindReconstruction([&](int generation) {
-        // The old generation is already invalidated; its view stays mapped (see `retiring`).
-        // Never destroy a live QML/native sender on its callback stack: all retirement runs on
-        // a later turn. Policy-context work expires with the owner.
+        // The old generation is already invalidated; its page stays on screen (see `retiring`
+        // and `sceneSlots`). Never destroy or navigate a live QML/native sender on its callback
+        // stack: all replacement runs on a later turn. Policy-context work expires with the owner.
         if (!policy.admits(generation)) return;
         QTimer::singleShot(0, &policy, [&, generation] {
             if (!policy.admits(generation)) return;
-            // Keep whatever is on screen. A revealed attachment covers its predecessor, so it
-            // becomes the one retiring; one still hidden never showed and is simply replaced.
-            // Mid-fade the predecessor is the only fully drawn page: keep it, drop the fading one.
-            if (retireTimer.isActive()) retireTimer.stop();
-            else if (attachment.view && currentToken && currentToken->revealed()) handOver();
+            if (attachment.view && windowMode == sceneHost.mode()) {
+                try {
+                    navigateSlot(generation);
+                } catch (...) {
+                    policy.constructionFailed(generation);
+                }
+                return;
+            }
+            // A mode switch builds a new window (geometry and layer differ). A window showing a
+            // drawn page becomes the one retiring; one that never showed a page is simply
+            // replaced. Mid-fade over a retiring window, that predecessor is the only fully drawn
+            // page: keep it, drop the fading window.
+            if (retireTimer.isActive() && retiring.view) retireTimer.stop();
+            else if (attachment.view && windowShowsPage()) handOver();
             if (!policy.admits(generation)) return;
             int replacementResult = 1;
             try {
