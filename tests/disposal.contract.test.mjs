@@ -133,7 +133,7 @@ test('production close routes and pre-exec failure use the actual owner', () => 
     assert.doesNotMatch(cpp, /view\.close\(/);
     assert.match(cpp, /&QTimer::timeout, &policy, \[&\] \{\s*policy.noteCloseReason\(Diagnostics::Reason::Deadline\);\s*policy.closeNormally\(\);\s*\}/);
     assert.match(cpp, /if \(view\.status\(\) != QQuickView::Ready\) \{ policy\.constructionFailed\(generation\); return 1; \}/);
-    assert.match(cpp, /app\.exec\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);\s*return policy.terminalResult\(\)/);
+    assert.match(cpp, /app\.exec\(\);\s*watchdog\.stop\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);\s*return policy.terminalResult\(\)/);
     assert.match(cpp, /if \(!layer\) \{ qCritical\("LayerShellQt unavailable"\); return 2; \}/);
     assert.match(cpp, /if \(preparationResult != 0\) \{\s*if \(preparationResult == 1\) policy.fail\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Guard, preparationResult\);\s*policy.closeNormally\(\);\s*return policy.terminalResult\(\) == 1 \? 1 : preparationResult;/);
     assert.match(cpp, /policy\.bindHost\([\s\S]*?attachment\.view->hide\(\)[\s\S]*?lifetime\.stop\(\)/);

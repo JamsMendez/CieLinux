@@ -13,6 +13,8 @@ qt_add_executable(cielinux src/main.cpp src/settings.cpp src/scene-host.cpp src/
 target_sources(cielinux PRIVATE src/mini-position.cpp src/mini-dodge.cpp src/instance-control.cpp src/log-routing.h)
 # B2: wallpaper fullscreen coverage from Hyprland IPC (pause + held alerts).
 target_sources(cielinux PRIVATE src/fullscreen-watch.cpp)
+# GUI-thread hang watchdog: aborts a frozen host so systemd restarts it.
+target_sources(cielinux PRIVATE src/hang-watchdog.cpp)
 target_include_directories(cielinux PRIVATE src)
 qt_add_qml_module(cielinux
     URI CieLinux.Host

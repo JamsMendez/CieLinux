@@ -486,7 +486,7 @@ test('one actually-used fresh construction path preserves lifetime wiring', () =
     assert.match(cpp, /return policy\.terminalResult\(\) == 1 \? 1 : preparationResult;/);
     assert.match(cpp, /screenRemoved, &policy,/);
     assert.match(cpp, /if \(attachment\.view\) attachment\.view->hide\(\)/);
-    assert.match(cpp, /configureLifetime\(lifetime, options\);[\s\S]*if \(policy.admits\(initialGeneration\) && attachment.view\) \{\s*attachment.view->show\(\);[\s\S]*app\.exec\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);/);
+    assert.match(cpp, /configureLifetime\(lifetime, options\);[\s\S]*if \(policy.admits\(initialGeneration\) && attachment.view\) \{\s*attachment.view->show\(\);[\s\S]*app\.exec\(\);\s*watchdog\.stop\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);/);
     assert.match(cpp, /QTimer::singleShot\(0, &policy, \[&, generation\] \{\s*if \(!policy\.admits\(generation\)\) return;[\s\S]*?replacementResult = prepareAttachment\(generation\);[\s\S]*?if \(!policy\.admits\(generation\)\) return;/);
     assert.match(cpp, /catch \(\.\.\.\) \{\s*policy\.constructionFailed\(generation\);\s*return;/);
     assert.match(cpp, /\[&, generation\] \{\s*if \(policy.admits\(generation\)\) policy.noteCloseReason\(Diagnostics::Reason::Dismissal\);\s*policy.closeGeneration\(generation\);\s*\}/);

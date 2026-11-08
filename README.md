@@ -733,6 +733,7 @@ each page start.
 | `CIELINUX_LIFECYCLE_CAP` | After 48 lifecycle records; later ones are dropped, except up to two `terminal` records. |
 | `CIELINUX_DIAGNOSTICS_JS severity=info\|warn\|error\|unknown source=<file> line=<n> message=<text>` | A scene page wrote to the console (see [Scene console lines](#scene-console-lines)). |
 | `CIELINUX_DIAGNOSTICS_CONSOLE_CAP` | After 64 console lines in the process; later ones are dropped. |
+| `CIELINUX_WATCHDOG hang stalled_ms=<ms> timeout_ms=15000; aborting` | The GUI event loop stopped turning for over 15 seconds (for example a Qt WebEngine compositor deadlock). The host aborts right after it, so systemd restarts the unit and `coredumpctl` keeps a core of the hang. |
 
 #### Lifecycle events
 
@@ -817,7 +818,7 @@ node --test tests/*.test.mjs                 # from CieLinux/
 node --test CieLinux/tests/*.test.mjs        # from the repository root
 ```
 
-36 contract test files, 354 tests. They read the sources and compile small native
+39 contract test files, 381 tests. They read the sources and compile small native
 harnesses against `src/` (they need the same Qt and CMake toolchain as the build).
 `tests/paths.mjs` maps file names to `src/` and `scenes/`.
 

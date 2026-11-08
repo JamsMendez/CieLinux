@@ -93,7 +93,7 @@ test('Qt signal is explicitly forwarded; startup precedes mapping after precheck
     assert.match(policy, /Q_INVOKABLE void fail\(\)\s*\{\s*finish\(true\);\s*\}/);
     assert.match(policy, /void finish\(bool failure\)\s*\{[\s\S]*?if \(failure\) result = 1;[\s\S]*?if \(failure\) diagnostics.failure\(\);\s*QCoreApplication::exit\(result\);\s*\}/);
     assert.match(policy, /int terminalResult\(\) const \{ return result; \}/);
-    assert.match(cpp, /app.exec\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);\s*return policy.terminalResult\(\);/);
+    assert.match(cpp, /app.exec\(\);\s*watchdog\.stop\(\);\s*policy.noteCloseReason\(Diagnostics::Reason::Ambient\);\s*policy.closeNormally\(\);\s*return policy.terminalResult\(\);/);
     // D2 moved option defaults and deadline scheduling into resident-control.h.
     const header = read('resident-control.h');
     assert.match(header, /int durationMs = 15000;/);

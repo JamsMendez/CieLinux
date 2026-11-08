@@ -16,6 +16,7 @@
 #include "mini-position.h"
 #include "instance-control.h"
 #include "fullscreen-watch.h"
+#include "hang-watchdog.h"
 #include <QPointer>
 #include <QVariantMap>
 #include <QElapsedTimer>
@@ -634,7 +635,12 @@ int main(int argc, char **argv) {
         attachment.stage = 4;
         policy.lifecycleDiagnostics().record(Diagnostics::Event::Mapped, initialGeneration);
     }
+    // A GUI thread that stops turning (e.g. a Qt WebEngine compositor deadlock) aborts the
+    // process so systemd restarts it instead of leaving a frozen scene on screen.
+    HangWatchdog watchdog;
+    watchdog.arm();
     app.exec();
+    watchdog.stop();
     policy.noteCloseReason(Diagnostics::Reason::Ambient);
     policy.closeNormally();
     return policy.terminalResult();
