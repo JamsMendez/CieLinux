@@ -1106,7 +1106,9 @@ test('processing O2 changes are removable marked blocks over the pinned referenc
         // Re-pinned for CielScenes 87dfae5 (odd/tasks/scenes-band-motion-contracts.md); was the CielWin
         // reference 84cce57bef22a17d9a41f4f9b91cd7c7bfeaa0f485ed082a76643aa7f0c3a405. The upstream band and
         // orbit block rewrite is unmarked and calls O2 helpers, so stripped layers no longer runs alone.
-        layers: '18ed315fa660374cb90702313c4766a02516ee8e52ade9738bb9856d8d39d2f4',
+        // Re-pinned for full-width mini folding bands (CielScenes fdcc27a); was
+        // 18ed315fa660374cb90702313c4766a02516ee8e52ade9738bb9856d8d39d2f4.
+        layers: '46721b36bc4ef273d7b2743a72801ec9b202aca685ed8d95699162887ab38eda',
     };
     for (const [name, hash] of Object.entries(reference)) {
         const source = read(`processing/js/${name}.js`);

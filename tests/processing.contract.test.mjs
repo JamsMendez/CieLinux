@@ -123,7 +123,8 @@ test('synthetic transport probes occur once at initialization, separately from a
 const referenceSha256 = {
     // Re-pinned after old-name→CielWin comment rename (text-only); was 3b0f1e6130112af7b2b1d4f63227815275558229e6eb3a4037ed99a23e328b11
     // Re-pinned for the band motion circuit and octagon zoom (odd/tasks/scenes-band-motion-contracts.md); was 7bc8567353f200d0d96942d452c321bc614e9fab8be2d05c58ec5c57f38ae4d2
-    config: '15750f44f199a80b40f44e3aaa707547e3011aa893983e28d83ea4994e9eac43',
+    // Re-pinned for full-width mini folding bands (CielScenes fdcc27a); was 15750f44f199a80b40f44e3aaa707547e3011aa893983e28d83ea4994e9eac43
+    config: '4324a7ccaf5940adb3605fe3cde856b2b953876436270c6117f4c203bcf8ae7d',
     math: '10951705adf6a91c232909443cc34fb4b54b185c2e219508330aed2e38dfc20f',
     // Linux mini optimization (O2); CielWin reference: 0ae7e1443c5da47f92a0434adbd87bc1a7ef1a59a69f8f0a6bb55a1dc4788bf8
     sphere: 'daf83b2c906eb0ed5bf1bf528f4a761f62190f98c9e6a29f8c0df82480c90304',
@@ -141,7 +142,8 @@ const referenceSha256 = {
     // Re-pinned for the cached wallpaper vignette (odd/tasks/scene-identical-caches.md T1); was 580e69b2847adafd589987451c28755e44810d8069de12194e978698ba3c38ca
     // Re-pinned for wallpaper scaling (odd/tasks/scene-wallpaper-scaling.md); was cb30b3f820096bddf25cfe661227d99541c5c4c7f6f6e1620e0f431b15e13fbe
     // Re-pinned for the rubber-band rings, tilted orbit blocks and band motion (odd/tasks/scenes-band-motion-contracts.md); was 7a39b66038e2c5f0ec9d63480954ea5e7402fbb4829a9348d616efc831d98b4e
-    layers: '8a57166917a66938a9b35b2136300861436dcbe2ad88e4c02abddd927b3e65e0',
+    // Re-pinned for full-width mini folding bands (CielScenes fdcc27a); was 8a57166917a66938a9b35b2136300861436dcbe2ad88e4c02abddd927b3e65e0
+    layers: 'baa5f1b8224a2abe36c2f183288d32b317de5c9da2e6ab965b6bc3befc9ef126',
     // Re-pinned for PERF-5/NEB-1 (odd/tasks/wallpaper-microstutters.md); was 0691660c5ca8a4fe9ff34dbf0954beaddd1e5bcbb02d16175b51678c9dc17162
     nebula: 'eac31e99953bd84950cee77603243e6ed2dccea0598f1e68cb3ad59d57f42d25',
 };
@@ -265,7 +267,10 @@ test('actual mini rendering keeps structures and masks, skips backgrounds', () =
     assert.equal(edge.stops[1][0], 0.41 / 0.48);
     assert.equal(h.evaluate('MINI_POLYGON_STROKE_PX'), 0.75);
     assert.equal(h.evaluate('structurePx(6)'), 6 * 239.75 / 1440);
-    assert.equal(h.evaluate('MINI_FOLDING_BAND_WIDTH_FACTOR'), 0.35);
+    // Mini keeps the full scene's folding band proportions: no mini-only width factor.
+    assert.equal(h.evaluate('typeof MINI_FOLDING_BAND_WIDTH_FACTOR'), 'undefined');
+    assert.equal(h.evaluate('foldingBandParameters(0.37)[0][3]'),
+        h.evaluate('Math.min(W, H) * FOLDING_BANDS[0].width'));
 });
 
 test('WebGL receives raw timestamp uniforms, mini flag and transparent clear', () => {
